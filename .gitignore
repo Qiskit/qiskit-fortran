@@ -1,0 +1,45 @@
+# Build directory
+build/
+
+# Fortran module files
+*.mod
+
+# Fortran object files
+*.o
+
+# Static libraries
+*.a
+
+# Shared libraries
+*.so
+*.dylib
+*.dll
+
+# Executables
+test_qiskit
+run_test
+
+# Test artifacts
+test/Testing/
+
+# External repositories (qiskit is built separately)
+qiskit/
+
+# macOS
+.DS_Store
+
+# IDE
+.vscode/
+.idea/
+
+# CMake
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+Makefile
+CTestTestfile.cmake
+
+# Backup files
+*~
+*.bak
+*.swp
