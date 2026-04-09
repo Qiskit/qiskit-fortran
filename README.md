@@ -6,38 +6,7 @@ Provides a two-layer binding that mirrors the architecture of
 [Qiskit.jl](https://github.com/Qiskit/Qiskit.jl) and
 [qiskit-cpp](https://github.com/Qiskit/qiskit-cpp):
 
-```
-┌─────────────────────────────────────────────┐
-│  Your Fortran program                       │
-│  use qiskit                                 │
-│  type(QuantumCircuit) :: qc                 │
-│  call qc%init(2, 2)                         │
-│  call qc%h(0) ; call qc%cx(0,1)             │
-└───────────────────┬─────────────────────────┘
-                    │  USE
-┌───────────────────-─────────────────────────┐
-│  src/qiskit.f90          [API layer]        │
-│  module qiskit                              │
-│  type(QuantumCircuit) + type-bound procs    │
-│  • Fortran-idiomatic interface              │
-│  • Error checking (check_rc -> error stop)  │
-│  • RAII via FINAL destructor                │
-└───────────────────┬─────────────────────────┘
-                    │  USE
-┌───────────────────-─────────────────────────┐
-│  src/qiskit_c_api.f90    [FFI layer]        │
-│  module qiskit_c_api                        │
-│  • INTERFACE blocks for every C function    │
-│  • QkGate_* and QkExitCode_* constants      │
-│  • No abstraction — names match qiskit.h    │
-└───────────────────┬─────────────────────────┘
-                    │  bind(C)
-┌───────────────────-─────────────────────────┐
-│  libqiskit.so / qiskit_cext.dll             │
-│  Rust + cbindgen → qiskit.h                 │
-│  (qiskit/crates/cext)                       │
-└─────────────────────────────────────────────┘
-```
+Fortran -> API (qiskit.f90) -> FFI (qiskit_c_api.f90) -> libqiskit (C/Rust)
 
 ---
 
