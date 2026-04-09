@@ -13,14 +13,10 @@
 ! Gate enum constants
 ! -------------------
 ! The QkGate integer values are generated from Rust's StandardGate enum and
-! compiled into qiskit.h by `make c` inside the Qiskit repo.  The constants
-! below are verified against Qiskit 2.2 / cext ABI.
+! compiled into qiskit.h by `make c` inside the Qiskit repo.
 !
-! If you upgrade Qiskit, re-verify with:
+! re-verify with:
 !   grep -E 'QkGate_[A-Za-z]+ =' $(QISKIT_ROOT)/dist/c/include/qiskit.h
-!
-! Authors : qiskit-fortran contributors
-! License : Apache-2.0
 ! =============================================================================
 
 module qiskit_c_api
@@ -31,7 +27,7 @@ module qiskit_c_api
   use qiskit_c_api_types
   use qiskit_c_api_circuit
 
-  implicit none
+  implicit none (type, external)
   private
 
   public :: QkGate_GlobalPhase

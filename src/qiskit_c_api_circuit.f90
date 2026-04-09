@@ -1,3 +1,8 @@
+!> @brief C API bindings for quantum circuit operations
+!>
+!> ISO_C_BINDING interfaces to Qiskit C extension. Gate constants match
+!> Rust's StandardGate enum. Function signatures match qiskit.h exactly.
+!> Prefer using the high-level qiskit module instead of this FFI layer.
 module qiskit_c_api_circuit
   use, intrinsic :: iso_c_binding, only : &
       c_ptr, c_int, c_int32_t, c_size_t
@@ -25,6 +30,7 @@ module qiskit_c_api_circuit
   public :: qk_circuit_reset
   public :: qk_circuit_barrier
 
+  ! Gate enum constants from qiskit.h (StandardGate in Rust)
   integer(c_int), parameter :: QkGate_GlobalPhase = 0_c_int
   integer(c_int), parameter :: QkGate_H           = 1_c_int
   integer(c_int), parameter :: QkGate_I           = 2_c_int

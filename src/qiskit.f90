@@ -8,10 +8,10 @@
 !
 ! Design principles (mirroring qiskit-cpp and Qiskit.jl):
 !   • Two clear layers: FFI (qiskit_c_api) and API (this module).
-!   • RAII via Fortran FINAL procedure — no manual free() calls needed.
+!   • RAII via Fortran FINAL procedure: no manual free() calls needed.
 !   • All qubit/clbit indices are 0-based, matching the C API and Python.
 !   • Every C call checks the exit code; failures call error stop.
-!   • No module-level mutable state — circuits are independent objects.
+!   • No module-level mutable state: circuits are independent objects.
 !
 ! Typical usage:
 !
@@ -23,17 +23,17 @@
 !   call qc%measure_all()
 !   print *, "instructions:", qc%num_instructions()
 !   ! qc is freed automatically when it leaves scope
-!
-! Authors : qiskit-fortran contributors
-! License : Apache-2.0
 ! =============================================================================
 
 module qiskit
   use qiskit_circuit
+  use qiskit_arrays
 
-  implicit none
+  implicit none (type, external)
   private
 
   public :: QuantumCircuit
+  public :: QubitArray, ParamArray
+  public :: q, p
 
 end module qiskit

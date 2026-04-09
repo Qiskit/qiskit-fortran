@@ -84,14 +84,18 @@ endif()
 # ---------------------------------------------------------------------------
 # Library: qiskit_fortran
 #
-# Source order matters for Fortran — qiskit_c_api.f90 must be compiled
-# before qiskit.f90 because qiskit USEs qiskit_c_api.
+# Source order matters for Fortran — modules must be compiled before their
+# dependents. Dependency chain:
+#   qiskit_c_api_types -> qiskit_c_api_circuit, qiskit_utils, qiskit_arrays
+#   qiskit_arrays -> qiskit_circuit
+#   qiskit_circuit -> qiskit
 # ---------------------------------------------------------------------------
 add_library(qiskit_fortran STATIC
   src/qiskit_c_api_types.f90
   src/qiskit_c_api_circuit.f90
   src/qiskit_c_api.f90
   src/qiskit_utils.f90
+  src/qiskit_arrays.f90
   src/qiskit_circuit.f90
   src/qiskit.f90)
 

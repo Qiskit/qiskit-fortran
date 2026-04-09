@@ -216,6 +216,25 @@ remember.  The circuit is released automatically when the variable goes out of
 scope.
 Re-initialisation is safe.
 
+### Array handling for parallelization
+
+The `qiskit_arrays` module provides `QubitArray` and `ParamArray` types with contiguous allocatable components. These arrays are used internally by all gate operations and can be used directly in HPC workflows.
+
+**Key properties:**
+- **Contiguous memory**: `ALLOCATABLE` guarantees stride-1 layout — enables SIMD vectorization and direct `MPI_Send` without `MPI_Pack`
+- **No aliasing**: Lack of `POINTER` attribute allows compiler to assume independence between arrays: permits loop hoisting and instruction reordering
+- **Single ABI boundary**: All Fortran→C conversions (`c_loc`) happen in one place (`to_c` functions), making the codebase auditable
+
+**Example — MPI circuit distribution:**
+```fortran
+use qiskit
+type(QubitArray) :: qa
+qa = q(0, 1, 2)  ! Contiguous allocatable
+call MPI_Send(qa%v, size(qa%v), MPI_INT32_T, dest, tag, comm, ierr)
+```
+
+The `q()` and `p()` constructors are exported by `use qiskit` for advanced use cases. Typical gate calls use them internally and require no explicit array handling.
+
 ---
 
 ## Memory safety checklist
@@ -230,6 +249,35 @@ Re-initialisation is safe.
 
 ---
 
-## License
+## Documentation
 
-Apache License 2.0 — same as Qiskit and qiskit-cpp.
+API documentation is generated using [Doxygen](https://www.doxygen.nl/), following the same approach as [qiskit-cpp](https://github.com/Qiskit/qiskit-cpp).
+
+### Setup
+
+Generate a default configuration:
+```bash
+doxygen -g Doxyfile
+```
+
+Edit `Doxyfile` to set:
+```
+PROJECT_NAME           = "qiskit-fortran"
+INPUT                  = src/
+RECURSIVE              = YES
+OPTIMIZE_FOR_FORTRAN   = YES
+EXTENSION_MAPPING      = f90=FortranFree F90=FortranFree
+EXTRACT_ALL            = NO
+EXTRACT_PRIVATE        = NO
+GENERATE_HTML          = YES
+OUTPUT_DIRECTORY       = docs/
+```
+
+Build documentation:
+```bash
+doxygen
+```
+
+Output is in `docs/html/index.html`. The high-level API is documented with Fortran-specific usage patterns. The FFI layer (`qiskit_c_api*.f90`) defers to the [Qiskit C API reference](https://docs.quantum.ibm.com/api/qiskit-c).
+
+---

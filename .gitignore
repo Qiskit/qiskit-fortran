@@ -43,3 +43,12 @@ CTestTestfile.cmake
 *~
 *.bak
 *.swp
+
+# Doxygen documentation output
+html/
+latex/
+xml/
+man/
+rtf/
+*.doxygen_sqlite3
+Doxyfile

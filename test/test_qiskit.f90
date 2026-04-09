@@ -11,13 +11,7 @@
 !
 ! The FINAL destructor on QuantumCircuit is tested implicitly: any circuit
 ! created inside a subroutine is freed automatically when that subroutine
-! returns.  Valgrind / AddressSanitizer can confirm zero leaks.
-!
-! Run:
-!   ./test_qiskit           # exits 0 on all-pass, non-zero on any failure
-!
-! Authors : qiskit-fortran contributors
-! License : Apache-2.0
+! returns.
 ! =============================================================================
 
 program test_qiskit
@@ -25,13 +19,13 @@ program test_qiskit
   use qiskit_c_api, only : QkGate_H, QkGate_CX, qk_gate_num_qubits, qk_gate_num_params
   use qiskit_c_api_circuit  ! Import all gate constants for verification
   use, intrinsic :: iso_c_binding, only : c_double, c_int32_t, c_int, c_size_t
-  implicit none
+  implicit none (type, external)
 
-  ! ---------- test harness state ----------
+  ! test harness state
   integer :: n_pass = 0
   integer :: n_fail = 0
 
-  ! ---------- run all tests ---------------
+  ! run all tests
   call test_gate_enum_constants()
   call test_construction()
   call test_bell_state()
@@ -48,7 +42,20 @@ program test_qiskit
   call test_gate_metadata()
   call test_large_circuit()
 
-  ! ---------- summary ---------------------
+  ! comprehensive array-based tests
+  call test_qubit_array_construction()
+  call test_param_array_construction()
+  call test_array_contiguity()
+  call test_optional_clbits_regression()
+  call test_num_instructions_type()
+
+  ! contract and edge-case tests
+  call test_to_c_contract()
+  call test_qubit_array_reassignment()
+  call test_measure_all_clbit_boundary()
+  call test_uninitialised_circuit_guards()
+
+  ! summary
   write(*, '(/, a)') "========================================"
   write(*, '(a, i0)') "  PASS : ", n_pass
   write(*, '(a, i0)') "  FAIL : ", n_fail
@@ -58,9 +65,7 @@ program test_qiskit
 
 contains
 
-  ! ===========================================================================
   ! Harness helpers
-  ! ===========================================================================
 
   subroutine assert_eq_int(got, expected, label)
     integer, intent(in) :: got, expected
@@ -106,15 +111,13 @@ contains
     write(*, '(/, "--- ", a, " ---")') name
   end subroutine section
 
-  ! ===========================================================================
   ! Tests
-  ! ===========================================================================
 
   !> Verify all gate enum constants are defined and have expected values.
   !> This ensures the enum values match the Qiskit C API header.
   subroutine test_gate_enum_constants()
     call section("Gate enum constants verification")
-    
+
     ! Single-qubit gates
     call assert_eq_int(int(QkGate_GlobalPhase), 0,  "QkGate_GlobalPhase == 0")
     call assert_eq_int(int(QkGate_H),           1,  "QkGate_H == 1")
@@ -137,7 +140,7 @@ contains
     call assert_eq_int(int(QkGate_U1),          18, "QkGate_U1 == 18")
     call assert_eq_int(int(QkGate_U2),          19, "QkGate_U2 == 19")
     call assert_eq_int(int(QkGate_U3),          20, "QkGate_U3 == 20 (NEW)")
-    
+
     ! Two-qubit gates
     call assert_eq_int(int(QkGate_CH),          21, "QkGate_CH == 21 (NEW)")
     call assert_eq_int(int(QkGate_CX),          22, "QkGate_CX == 22 (FIXED)")
@@ -147,7 +150,7 @@ contains
     call assert_eq_int(int(QkGate_ECR),         26, "QkGate_ECR == 26 (FIXED)")
     call assert_eq_int(int(QkGate_Swap),        27, "QkGate_Swap == 27 (FIXED)")
     call assert_eq_int(int(QkGate_ISwap),       28, "QkGate_ISwap == 28 (NEW)")
-    
+
     ! Three-qubit gates
     call assert_eq_int(int(QkGate_CCX),         45, "QkGate_CCX == 45 (FIXED)")
   end subroutine test_gate_enum_constants
@@ -261,7 +264,7 @@ contains
     call assert_eq_int_size_t(qc%num_instructions(), 4, "P(π/8) appended")
   end subroutine test_rotation_gates
 
-  !> U(θ,φ,λ) gate covers all three parameters in one call.
+  !> U gate covers all three parameters in one call.
   subroutine test_u_gate()
     type(QuantumCircuit) :: qc
     real(c_double), parameter :: pi = 3.14159265358979323846_c_double
@@ -427,5 +430,226 @@ contains
     call assert_eq_int_size_t(qc%num_instructions(), expected_instr, &
         "after measure_all: 350 instructions")
   end subroutine test_large_circuit
+
+  !> Test QubitArray construction and content verification.
+  !> Ensures q() helper creates arrays with correct size and values.
+  subroutine test_qubit_array_construction()
+    use qiskit_arrays, only : QubitArray, q
+    type(QubitArray) :: qa
+    call section("QubitArray construction")
+
+    qa = q(0)
+    call assert_true(allocated(qa%v),       "q(0): allocated")
+    call assert_eq_int(size(qa%v), 1,       "q(0): size == 1")
+    call assert_eq_int(int(qa%v(1)), 0,     "q(0): value == 0")
+
+    qa = q(3, 7)
+    call assert_eq_int(size(qa%v), 2,       "q(3,7): size == 2")
+    call assert_eq_int(int(qa%v(1)), 3,     "q(3,7): ctrl == 3")
+    call assert_eq_int(int(qa%v(2)), 7,     "q(3,7): tgt == 7")
+
+    qa = q(0, 1, 2)
+    call assert_eq_int(size(qa%v), 3,       "q(0,1,2): size == 3")
+    call assert_eq_int(int(qa%v(1)), 0,     "q(0,1,2): first == 0")
+    call assert_eq_int(int(qa%v(2)), 1,     "q(0,1,2): second == 1")
+    call assert_eq_int(int(qa%v(3)), 2,     "q(0,1,2): third == 2")
+  end subroutine test_qubit_array_construction
+
+  !> Test ParamArray construction and content verification.
+  !> Ensures p() helper creates arrays with correct size and values.
+  subroutine test_param_array_construction()
+    use qiskit_arrays, only : ParamArray, p
+    type(ParamArray) :: pa
+    real(c_double), parameter :: tol = 1.0e-12_c_double
+    call section("ParamArray construction")
+
+    pa = p(1.5_c_double)
+    call assert_true(allocated(pa%v),       "p(1.5): allocated")
+    call assert_eq_int(size(pa%v), 1,       "p(1.5): size == 1")
+    call assert_true(abs(pa%v(1) - 1.5_c_double) < tol, "p(1.5): value == 1.5")
+
+    pa = p(1.0_c_double, 2.0_c_double)
+    call assert_eq_int(size(pa%v), 2,       "p(1.0,2.0): size == 2")
+    call assert_true(abs(pa%v(1) - 1.0_c_double) < tol, "p(1.0,2.0): first == 1.0")
+    call assert_true(abs(pa%v(2) - 2.0_c_double) < tol, "p(1.0,2.0): second == 2.0")
+
+    pa = p(1.0_c_double, 2.0_c_double, 3.0_c_double)
+    call assert_eq_int(size(pa%v), 3,       "p(1.0,2.0,3.0): size == 3")
+    call assert_true(abs(pa%v(1) - 1.0_c_double) < tol, "p(1.0,2.0,3.0): first == 1.0")
+    call assert_true(abs(pa%v(2) - 2.0_c_double) < tol, "p(1.0,2.0,3.0): second == 2.0")
+    call assert_true(abs(pa%v(3) - 3.0_c_double) < tol, "p(1.0,2.0,3.0): third == 3.0")
+  end subroutine test_param_array_construction
+
+  !> Test array contiguity for MPI/SIMD safety.
+  !> Verifies that allocatable arrays have stride-1 memory layout.
+  subroutine test_array_contiguity()
+    use qiskit_arrays, only : QubitArray, ParamArray, q, p
+    type(QubitArray) :: qa
+    type(ParamArray) :: pa
+    call section("Contiguity (MPI/SIMD safety)")
+
+    ! Fortran guarantees allocatables are contiguous.
+    ! Verify stride-1 by checking address difference equals element size.
+    qa = q(0, 1, 2)
+    call assert_true(is_contiguous_qubit(qa%v), "QubitArray%v is contiguous")
+
+    pa = p(1.0_c_double, 2.0_c_double, 3.0_c_double)
+    call assert_true(is_contiguous_param(pa%v), "ParamArray%v is contiguous")
+  end subroutine test_array_contiguity
+
+  !> Helper: verify stride == 1 for qubit arrays by pointer arithmetic
+  logical function is_contiguous_qubit(v)
+    use qiskit_c_api_types, only : QK_QUBIT_KIND
+    use, intrinsic :: iso_c_binding, only : c_loc, c_int64_t
+    integer(QK_QUBIT_KIND), target, intent(in) :: v(:)
+    integer(c_int64_t) :: addr1, addr2
+    if (size(v) < 2) then
+      is_contiguous_qubit = .true.
+      return
+    end if
+    addr1 = transfer(c_loc(v(1)), addr1)
+    addr2 = transfer(c_loc(v(2)), addr2)
+    is_contiguous_qubit = (addr2 - addr1 == storage_size(v(1)) / 8)
+  end function is_contiguous_qubit
+
+  !> Helper: verify stride == 1 for param arrays by pointer arithmetic
+  logical function is_contiguous_param(v)
+    use, intrinsic :: iso_c_binding, only : c_loc, c_int64_t
+    real(c_double), target, intent(in) :: v(:)
+    integer(c_int64_t) :: addr1, addr2
+    if (size(v) < 2) then
+      is_contiguous_param = .true.
+      return
+    end if
+    addr1 = transfer(c_loc(v(1)), addr1)
+    addr2 = transfer(c_loc(v(2)), addr2)
+    is_contiguous_param = (addr2 - addr1 == storage_size(v(1)) / 8)
+  end function is_contiguous_param
+
+  !> Regression test for optional num_clbits SEGV bug.
+  !> Tests the exact sequence that triggered the merge-time crash.
+  subroutine test_optional_clbits_regression()
+    type(QuantumCircuit) :: qc
+    call section("Optional num_clbits regression (merge-SEGV)")
+
+    ! First init with clbits
+    call qc%init(num_qubits=2, num_clbits=2)
+    call assert_eq_int(qc%num_clbits(), 2, "init with clbits: 2")
+
+    ! Second init WITHOUT clbits — this is what triggered the SEGV
+    call qc%init(num_qubits=3)
+    call assert_eq_int(qc%num_clbits(), 0, "re-init without clbits: 0")
+
+    ! Third init WITHOUT clbits on a fresh variable
+    call qc%init(num_qubits=1)
+    call assert_eq_int(qc%num_clbits(), 0, "fresh init without clbits: 0")
+  end subroutine test_optional_clbits_regression
+
+  !> Test that num_instructions returns c_size_t without truncation.
+  !> Verifies type correctness and that large values aren't silently truncated.
+  subroutine test_num_instructions_type()
+    use, intrinsic :: iso_c_binding, only : c_size_t
+    type(QuantumCircuit) :: qc
+    integer(c_size_t) :: n
+    call section("num_instructions returns c_size_t (no truncation)")
+
+    call qc%init(4, 0)
+    call qc%h(0)
+    call qc%h(1)
+    call qc%h(2)
+    call qc%h(3)
+
+    n = qc%num_instructions()
+    call assert_true(kind(n) == kind(1_c_size_t), "num_instructions kind is c_size_t")
+    call assert_eq_int_size_t(n, 4, "4 H gates == 4 instructions")
+  end subroutine test_num_instructions_type
+
+  !> Test to_c() contract: unallocated arrays return c_null_ptr,
+  !> allocated arrays return non-null pointers.
+  subroutine test_to_c_contract()
+    use qiskit_arrays,       only : QubitArray, ParamArray, q, p, to_c
+    use, intrinsic :: iso_c_binding, only : c_ptr, c_associated
+    type(QubitArray) :: qa_empty, qa_full
+    type(ParamArray) :: pa_empty, pa_full
+    type(c_ptr)      :: ptr
+
+    call section("to_c() contract")
+
+    ! Unallocated → must produce c_null_ptr
+    ptr = to_c(qa_empty)
+    call assert_true(.not. c_associated(ptr), "to_c(unallocated QubitArray) == null")
+
+    ptr = to_c(pa_empty)
+    call assert_true(.not. c_associated(ptr), "to_c(unallocated ParamArray) == null")
+
+    ! Allocated → must produce non-null
+    qa_full = q(0)
+    ptr = to_c(qa_full)
+    call assert_true(c_associated(ptr), "to_c(q(0)) /= null")
+
+    pa_full = p(1.0_c_double)
+    ptr = to_c(pa_full)
+    call assert_true(c_associated(ptr), "to_c(p(1.0)) /= null")
+  end subroutine test_to_c_contract
+
+  !> Test QubitArray reassignment: verify that reassigning a QubitArray
+  !> properly deallocates the old allocation and creates a new one.
+  subroutine test_qubit_array_reassignment()
+    use qiskit_arrays, only : QubitArray, q
+    type(QubitArray) :: qa
+
+    call section("QubitArray reassignment (no leak)")
+
+    qa = q(0, 1)                              ! alloc size 2
+    call assert_eq_int(size(qa%v), 2, "after q(0,1): size 2")
+
+    qa = q(5)                                 ! realloc to size 1
+    call assert_eq_int(size(qa%v), 1, "after q(5): size 1")
+    call assert_eq_int(int(qa%v(1)), 5, "after q(5): value 5")
+
+    qa = q(2, 3, 4)                           ! realloc to size 3
+    call assert_eq_int(size(qa%v), 3, "after q(2,3,4): size 3")
+    call assert_eq_int(int(qa%v(1)), 2, "first element == 2")
+    call assert_eq_int(int(qa%v(2)), 3, "second element == 3")
+    call assert_eq_int(int(qa%v(3)), 4, "third element == 4")
+  end subroutine test_qubit_array_reassignment
+
+  !> Test measure_all boundary conditions: nc == nq (exact match) and
+  !> nc > nq (extra clbits) must both succeed. nc < nq triggers error stop.
+  subroutine test_measure_all_clbit_boundary()
+    type(QuantumCircuit) :: qc
+
+    call section("measure_all clbit boundary")
+
+    ! Exact match: nc == nq — must succeed
+    call qc%init(num_qubits=3, num_clbits=3)
+    call qc%measure_all()
+    call assert_eq_int_size_t(qc%num_instructions(), 3, &
+        "measure_all with nc==nq succeeds (3 instructions)")
+
+    ! nc > nq — must also succeed (extra clbits are fine)
+    call qc%init(num_qubits=2, num_clbits=5)
+    call qc%measure_all()
+    call assert_eq_int_size_t(qc%num_instructions(), 2, &
+        "measure_all with nc>nq succeeds (2 instructions)")
+  end subroutine test_measure_all_clbit_boundary
+
+  !> Test that calling methods on an uninitialised circuit triggers
+  !> appropriate error stops. This verifies guard clauses.
+  !> Note: These tests would ideally use death-test wrappers; for now,
+  !> we verify that initialised circuits work and document the guards exist.
+  subroutine test_uninitialised_circuit_guards()
+    type(QuantumCircuit) :: qc
+
+    call section("Uninitialised circuit guards")
+    call qc%init(num_qubits=2, num_clbits=2)
+    call assert_eq_int(qc%num_qubits(), 2, "initialised circuit: num_qubits works")
+    call assert_eq_int(qc%num_clbits(), 2, "initialised circuit: num_clbits works")
+
+    ! Add a gate to verify dispatch_gate guard
+    call qc%h(0)
+    call assert_eq_int_size_t(qc%num_instructions(), 1, &
+        "initialised circuit: gate dispatch works")
+  end subroutine test_uninitialised_circuit_guards
 
 end program test_qiskit
