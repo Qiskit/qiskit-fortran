@@ -139,20 +139,20 @@ contains
     call assert_eq_int(int(QkGate_U),           17, "QkGate_U == 17")
     call assert_eq_int(int(QkGate_U1),          18, "QkGate_U1 == 18")
     call assert_eq_int(int(QkGate_U2),          19, "QkGate_U2 == 19")
-    call assert_eq_int(int(QkGate_U3),          20, "QkGate_U3 == 20 (NEW)")
+    call assert_eq_int(int(QkGate_U3),          20, "QkGate_U3 == 20")
 
     ! Two-qubit gates
-    call assert_eq_int(int(QkGate_CH),          21, "QkGate_CH == 21 (NEW)")
-    call assert_eq_int(int(QkGate_CX),          22, "QkGate_CX == 22 (FIXED)")
-    call assert_eq_int(int(QkGate_CY),          23, "QkGate_CY == 23 (FIXED)")
-    call assert_eq_int(int(QkGate_CZ),          24, "QkGate_CZ == 24 (FIXED)")
-    call assert_eq_int(int(QkGate_DCX),         25, "QkGate_DCX == 25 (NEW)")
-    call assert_eq_int(int(QkGate_ECR),         26, "QkGate_ECR == 26 (FIXED)")
-    call assert_eq_int(int(QkGate_Swap),        27, "QkGate_Swap == 27 (FIXED)")
-    call assert_eq_int(int(QkGate_ISwap),       28, "QkGate_ISwap == 28 (NEW)")
+    call assert_eq_int(int(QkGate_CH),          21, "QkGate_CH == 21")
+    call assert_eq_int(int(QkGate_CX),          22, "QkGate_CX == 22")
+    call assert_eq_int(int(QkGate_CY),          23, "QkGate_CY == 23")
+    call assert_eq_int(int(QkGate_CZ),          24, "QkGate_CZ == 24")
+    call assert_eq_int(int(QkGate_DCX),         25, "QkGate_DCX == 25")
+    call assert_eq_int(int(QkGate_ECR),         26, "QkGate_ECR == 26")
+    call assert_eq_int(int(QkGate_Swap),        27, "QkGate_Swap == 27")
+    call assert_eq_int(int(QkGate_ISwap),       28, "QkGate_ISwap == 28")
 
     ! Three-qubit gates
-    call assert_eq_int(int(QkGate_CCX),         45, "QkGate_CCX == 45 (FIXED)")
+    call assert_eq_int(int(QkGate_CCX),         45, "QkGate_CCX == 45")
   end subroutine test_gate_enum_constants
 
   !> A freshly initialised circuit has the correct qubit/clbit counts and
@@ -174,7 +174,7 @@ contains
     call assert_eq_int_size_t(qc%num_instructions(), 0, "re-init empty")
   end subroutine test_construction
 
-  !> Bell state: H(0) + CX(0,1) + measure_all → 4 instructions.
+  !> Bell state: H(0) + CX(0,1) + measure_all -> 4 instructions.
   subroutine test_bell_state()
     type(QuantumCircuit) :: qc
     call section("Bell state")
@@ -575,14 +575,14 @@ contains
 
     call section("to_c() contract")
 
-    ! Unallocated → must produce c_null_ptr
+    ! Unallocated -> must produce c_null_ptr
     ptr = to_c(qa_empty)
     call assert_true(.not. c_associated(ptr), "to_c(unallocated QubitArray) == null")
 
     ptr = to_c(pa_empty)
     call assert_true(.not. c_associated(ptr), "to_c(unallocated ParamArray) == null")
 
-    ! Allocated → must produce non-null
+    ! Allocated -> must produce non-null
     qa_full = q(0)
     ptr = to_c(qa_full)
     call assert_true(c_associated(ptr), "to_c(q(0)) /= null")

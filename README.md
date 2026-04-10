@@ -192,7 +192,7 @@ The `qiskit_arrays` module provides `QubitArray` and `ParamArray` types with con
 **Key properties:**
 - **Contiguous memory**: `ALLOCATABLE` guarantees stride-1 layout — enables SIMD vectorization and direct `MPI_Send` without `MPI_Pack`
 - **No aliasing**: Lack of `POINTER` attribute allows compiler to assume independence between arrays: permits loop hoisting and instruction reordering
-- **Single ABI boundary**: All Fortran→C conversions (`c_loc`) happen in one place (`to_c` functions), making the codebase auditable
+- **Single ABI boundary**: All Fortran-C conversions (`c_loc`) happen in one place (`to_c` functions), making the codebase auditable
 
 **Example — MPI circuit distribution:**
 ```fortran
