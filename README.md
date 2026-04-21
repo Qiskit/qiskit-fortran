@@ -16,8 +16,8 @@ qiskit.f90 -> qiskit_circuit.f90 -> qiskit_c_api_circuit.f90 -> libqiskit (C/Rus
 |---|---|---|
 | Platform | macOS 13+ | Tested; Linux (glibc) should work but untested; Windows not supported |
 | Fortran compiler | gfortran 9+ | Needs Fortran 2018 (`FINAL`, `ERROR STOP` with message, `C_LOC`); ifort/ifx and Cray untested, contributions welcome |
-| CMake | 3.20 | |
-| Qiskit (Python) | 2.2 | Must be installed so the cext build works |
+| CMake | 3.20+ | |
+| Qiskit (Python) | 2.2+ | Must be installed so the cext build works |
 | Rust toolchain | stable | Needed only to build the C extension |
 
 ---
