@@ -42,7 +42,7 @@ qiskit/dist/c/
 ├── include/
 │   └── qiskit.h
 └── lib/
-    └── libqiskit.so  # or libqiskit.dylib on macOS
+    └── libqiskit.so  # or libqiskit.dylib
 ```
 
 ---
