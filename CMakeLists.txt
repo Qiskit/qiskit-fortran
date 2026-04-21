@@ -1,5 +1,5 @@
 # =============================================================================
-# CMakeLists.txt  —  qiskit-fortran
+# CMakeLists.txt  —  qiskit-f90
 #
 # Builds two targets:
 #   qiskit_fortran  — static library containing both modules
@@ -36,6 +36,7 @@ if(QISKIT_ROOT STREQUAL "")
     "  cd /path/to/qiskit && make c")
 endif()
 
+# Resolves libqiskit.so (Linux), libqiskit.dylib (macOS)
 find_library(QISKIT_LIB
   NAMES qiskit qiskit_cext
   HINTS "${QISKIT_ROOT}/dist/c/lib"
@@ -66,19 +67,10 @@ if(CMAKE_Fortran_COMPILER_ID MATCHES "GNU")
     $<$<COMPILE_LANGUAGE:Fortran>:-fbacktrace>
     $<$<COMPILE_LANGUAGE:Fortran>:-g>
     $<$<AND:$<COMPILE_LANGUAGE:Fortran>,$<CONFIG:Release>>:-O2>)
-
-elseif(CMAKE_Fortran_COMPILER_ID MATCHES "Intel|IntelLLVM")
-  add_compile_options(
-    $<$<COMPILE_LANGUAGE:Fortran>:-stand>
-    $<$<COMPILE_LANGUAGE:Fortran>:f18>
-    $<$<COMPILE_LANGUAGE:Fortran>:-warn>
-    $<$<COMPILE_LANGUAGE:Fortran>:all>
-    $<$<AND:$<COMPILE_LANGUAGE:Fortran>,$<CONFIG:Release>>:-O3>
-    $<$<AND:$<COMPILE_LANGUAGE:Fortran>,$<CONFIG:Release>>:-ipo>)
-
-elseif(CMAKE_Fortran_COMPILER_ID MATCHES "Cray")
-  add_compile_options(
-    $<$<COMPILE_LANGUAGE:Fortran>:-hstd=f2018>)
+else()
+  message(WARNING
+    "Untested Fortran compiler: ${CMAKE_Fortran_COMPILER_ID}. "
+    "Only gfortran has been validated. Proceeding without compiler-specific flags.")
 endif()
 
 # ---------------------------------------------------------------------------
@@ -86,8 +78,7 @@ endif()
 #
 # Source order matters for Fortran — modules must be compiled before their
 # dependents. Dependency chain:
-#   qiskit_c_api_types -> qiskit_c_api_circuit, qiskit_utils, qiskit_arrays
-#   qiskit_arrays -> qiskit_circuit
+#   qiskit_c_api_types -> qiskit_c_api_circuit, qiskit_utils
 #   qiskit_circuit -> qiskit
 # ---------------------------------------------------------------------------
 add_library(qiskit_fortran STATIC
@@ -95,7 +86,6 @@ add_library(qiskit_fortran STATIC
   src/qiskit_c_api_circuit.f90
   src/qiskit_c_api.f90
   src/qiskit_utils.f90
-  src/qiskit_arrays.f90
   src/qiskit_circuit.f90
   src/qiskit.f90)
 
@@ -120,79 +110,51 @@ if(QISKIT_FORTRAN_TESTS)
   add_executable(test_qiskit test/test_qiskit.f90)
 
   target_link_libraries(test_qiskit PRIVATE qiskit_fortran)
-  
   target_include_directories(test_qiskit PRIVATE "${CMAKE_BINARY_DIR}/modules")
-
   add_dependencies(test_qiskit qiskit_fortran)
 
-  # Detect Python dynamically for library path resolution
-  # Try conda environment first, then system Python
+  # Extract the directory containing libqiskit for RPATH
+  get_filename_component(QISKIT_LIB_DIR "${QISKIT_LIB}" DIRECTORY)
+
+  # Detect Python lib dir for the libpython transitive dep of libqiskit
   if(DEFINED ENV{CONDA_PREFIX})
-    set(PYTHON_EXECUTABLE "$ENV{CONDA_PREFIX}/bin/python3")
-    message(STATUS "Using Python from conda environment: ${PYTHON_EXECUTABLE}")
+    set(PYTHON_LIB_DIR "$ENV{CONDA_PREFIX}/lib")
+    message(STATUS "Python lib dir (conda): ${PYTHON_LIB_DIR}")
   else()
     find_package(Python3 COMPONENTS Interpreter)
     if(Python3_FOUND)
-      set(PYTHON_EXECUTABLE ${Python3_EXECUTABLE})
-      message(STATUS "Using system Python: ${PYTHON_EXECUTABLE}")
+      execute_process(
+        COMMAND "${Python3_EXECUTABLE}" -c
+          "import sys, os; print(os.path.join(sys.prefix, 'lib'))"
+        OUTPUT_VARIABLE PYTHON_LIB_DIR
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+        ERROR_QUIET)
+      message(STATUS "Python lib dir (system): ${PYTHON_LIB_DIR}")
     endif()
   endif()
-  
-  # Build library path list dynamically based on platform
-  set(TEST_LIBRARY_PATHS "")
-  
-  if(DEFINED PYTHON_EXECUTABLE)
-    execute_process(
-      COMMAND ${PYTHON_EXECUTABLE} -c "import sys; import os; print(os.path.join(sys.prefix, 'lib'))"
-      OUTPUT_VARIABLE PYTHON_LIB_DIR
-      OUTPUT_STRIP_TRAILING_WHITESPACE
-      ERROR_QUIET
-    )
-    if(PYTHON_LIB_DIR)
-      message(STATUS "Python library directory: ${PYTHON_LIB_DIR}")
-      list(APPEND TEST_LIBRARY_PATHS "${PYTHON_LIB_DIR}")
-    endif()
-  endif()
-  
-  # Add platform-specific system library paths
-  if(APPLE)
-    list(APPEND TEST_LIBRARY_PATHS "/usr/lib")
-  elseif(UNIX)
-    # Linux: add common library paths
-    list(APPEND TEST_LIBRARY_PATHS "/usr/lib" "/usr/local/lib")
-  endif()
-  
-  # Convert list to colon-separated string for environment variable
-  if(TEST_LIBRARY_PATHS)
-    string(REPLACE ";" ":" TEST_LIBRARY_PATH "${TEST_LIBRARY_PATHS}")
-    message(STATUS "Test library path: ${TEST_LIBRARY_PATH}")
-    
-    # Set platform-specific library path environment variable
-    if(APPLE)
-      set(LIB_PATH_VAR "DYLD_LIBRARY_PATH")
-    else()
-      set(LIB_PATH_VAR "LD_LIBRARY_PATH")
-    endif()
-    
-    add_custom_target(run_test
-      COMMAND ${CMAKE_COMMAND} -E env ${LIB_PATH_VAR}=${TEST_LIBRARY_PATH} $<TARGET_FILE:test_qiskit>
-      DEPENDS test_qiskit
-      WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
-      COMMENT "Running test_qiskit with ${LIB_PATH_VAR}=${TEST_LIBRARY_PATH}"
-      VERBATIM)
+
+  # Embed the runtime search paths directly in the binary — no env var needed
+  # Guard PYTHON_LIB_DIR so it's only appended if non-empty
+  if(PYTHON_LIB_DIR)
+    set_target_properties(test_qiskit PROPERTIES
+      BUILD_RPATH  "${QISKIT_LIB_DIR};${PYTHON_LIB_DIR}"
+      INSTALL_RPATH "${QISKIT_LIB_DIR};${PYTHON_LIB_DIR}"
+      BUILD_WITH_INSTALL_RPATH OFF)
   else()
-    message(WARNING "No library paths detected - test may fail to load shared libraries")
-    add_custom_target(run_test
-      COMMAND $<TARGET_FILE:test_qiskit>
-      DEPENDS test_qiskit
-      WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
-      COMMENT "Running test_qiskit"
-      VERBATIM)
+    set_target_properties(test_qiskit PROPERTIES
+      BUILD_RPATH  "${QISKIT_LIB_DIR}"
+      INSTALL_RPATH "${QISKIT_LIB_DIR}"
+      BUILD_WITH_INSTALL_RPATH OFF)
   endif()
-  
-  # Make 'test' an alias for 'run_test' for convenience
-  add_custom_target(test
-    DEPENDS run_test)
+
+  add_custom_target(run_test
+    COMMAND $<TARGET_FILE:test_qiskit>
+    DEPENDS test_qiskit
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+    COMMENT "Running test_qiskit"
+    VERBATIM)
+
+  add_custom_target(test DEPENDS run_test)
 endif()
 
 # ---------------------------------------------------------------------------
@@ -204,5 +166,5 @@ install(TARGETS qiskit_fortran
   ARCHIVE DESTINATION "${CMAKE_INSTALL_LIBDIR}")
 
 install(DIRECTORY "${CMAKE_BINARY_DIR}/modules/"
-  DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}/qiskit-fortran"
+  DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}/qiskit-f90"
   FILES_MATCHING PATTERN "*.mod")

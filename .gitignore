@@ -24,6 +24,7 @@ test/Testing/
 
 # External repositories (qiskit is built separately)
 qiskit/
+Qiskit-f90.git/
 
 # macOS
 .DS_Store

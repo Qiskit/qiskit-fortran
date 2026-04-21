@@ -7,7 +7,7 @@ module qiskit_c_api_circuit
   use, intrinsic :: iso_c_binding, only : &
       c_ptr, c_int, c_int32_t, c_size_t
 
-  implicit none
+  implicit none (type, external)
   private
 
   public :: QkGate_GlobalPhase

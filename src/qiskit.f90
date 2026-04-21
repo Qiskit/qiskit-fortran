@@ -27,13 +27,10 @@
 
 module qiskit
   use qiskit_circuit
-  use qiskit_arrays
 
   implicit none (type, external)
   private
 
   public :: QuantumCircuit
-  public :: QubitArray, ParamArray
-  public :: q, p
 
 end module qiskit

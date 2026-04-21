@@ -42,16 +42,11 @@ program test_qiskit
   call test_gate_metadata()
   call test_large_circuit()
 
-  ! comprehensive array-based tests
-  call test_qubit_array_construction()
-  call test_param_array_construction()
-  call test_array_contiguity()
+  ! comprehensive tests
   call test_optional_clbits_regression()
   call test_num_instructions_type()
 
   ! contract and edge-case tests
-  call test_to_c_contract()
-  call test_qubit_array_reassignment()
   call test_measure_all_clbit_boundary()
   call test_uninitialised_circuit_guards()
 
@@ -431,101 +426,6 @@ contains
         "after measure_all: 350 instructions")
   end subroutine test_large_circuit
 
-  !> Test QubitArray construction and content verification.
-  !> Ensures q() helper creates arrays with correct size and values.
-  subroutine test_qubit_array_construction()
-    use qiskit_arrays, only : QubitArray, q
-    type(QubitArray) :: qa
-    call section("QubitArray construction")
-
-    qa = q(0)
-    call assert_true(allocated(qa%v),       "q(0): allocated")
-    call assert_eq_int(size(qa%v), 1,       "q(0): size == 1")
-    call assert_eq_int(int(qa%v(1)), 0,     "q(0): value == 0")
-
-    qa = q(3, 7)
-    call assert_eq_int(size(qa%v), 2,       "q(3,7): size == 2")
-    call assert_eq_int(int(qa%v(1)), 3,     "q(3,7): ctrl == 3")
-    call assert_eq_int(int(qa%v(2)), 7,     "q(3,7): tgt == 7")
-
-    qa = q(0, 1, 2)
-    call assert_eq_int(size(qa%v), 3,       "q(0,1,2): size == 3")
-    call assert_eq_int(int(qa%v(1)), 0,     "q(0,1,2): first == 0")
-    call assert_eq_int(int(qa%v(2)), 1,     "q(0,1,2): second == 1")
-    call assert_eq_int(int(qa%v(3)), 2,     "q(0,1,2): third == 2")
-  end subroutine test_qubit_array_construction
-
-  !> Test ParamArray construction and content verification.
-  !> Ensures p() helper creates arrays with correct size and values.
-  subroutine test_param_array_construction()
-    use qiskit_arrays, only : ParamArray, p
-    type(ParamArray) :: pa
-    real(c_double), parameter :: tol = 1.0e-12_c_double
-    call section("ParamArray construction")
-
-    pa = p(1.5_c_double)
-    call assert_true(allocated(pa%v),       "p(1.5): allocated")
-    call assert_eq_int(size(pa%v), 1,       "p(1.5): size == 1")
-    call assert_true(abs(pa%v(1) - 1.5_c_double) < tol, "p(1.5): value == 1.5")
-
-    pa = p(1.0_c_double, 2.0_c_double)
-    call assert_eq_int(size(pa%v), 2,       "p(1.0,2.0): size == 2")
-    call assert_true(abs(pa%v(1) - 1.0_c_double) < tol, "p(1.0,2.0): first == 1.0")
-    call assert_true(abs(pa%v(2) - 2.0_c_double) < tol, "p(1.0,2.0): second == 2.0")
-
-    pa = p(1.0_c_double, 2.0_c_double, 3.0_c_double)
-    call assert_eq_int(size(pa%v), 3,       "p(1.0,2.0,3.0): size == 3")
-    call assert_true(abs(pa%v(1) - 1.0_c_double) < tol, "p(1.0,2.0,3.0): first == 1.0")
-    call assert_true(abs(pa%v(2) - 2.0_c_double) < tol, "p(1.0,2.0,3.0): second == 2.0")
-    call assert_true(abs(pa%v(3) - 3.0_c_double) < tol, "p(1.0,2.0,3.0): third == 3.0")
-  end subroutine test_param_array_construction
-
-  !> Test array contiguity for MPI/SIMD safety.
-  !> Verifies that allocatable arrays have stride-1 memory layout.
-  subroutine test_array_contiguity()
-    use qiskit_arrays, only : QubitArray, ParamArray, q, p
-    type(QubitArray) :: qa
-    type(ParamArray) :: pa
-    call section("Contiguity (MPI/SIMD safety)")
-
-    ! Fortran guarantees allocatables are contiguous.
-    ! Verify stride-1 by checking address difference equals element size.
-    qa = q(0, 1, 2)
-    call assert_true(is_contiguous_qubit(qa%v), "QubitArray%v is contiguous")
-
-    pa = p(1.0_c_double, 2.0_c_double, 3.0_c_double)
-    call assert_true(is_contiguous_param(pa%v), "ParamArray%v is contiguous")
-  end subroutine test_array_contiguity
-
-  !> Helper: verify stride == 1 for qubit arrays by pointer arithmetic
-  logical function is_contiguous_qubit(v)
-    use qiskit_c_api_types, only : QK_QUBIT_KIND
-    use, intrinsic :: iso_c_binding, only : c_loc, c_int64_t
-    integer(QK_QUBIT_KIND), target, intent(in) :: v(:)
-    integer(c_int64_t) :: addr1, addr2
-    if (size(v) < 2) then
-      is_contiguous_qubit = .true.
-      return
-    end if
-    addr1 = transfer(c_loc(v(1)), addr1)
-    addr2 = transfer(c_loc(v(2)), addr2)
-    is_contiguous_qubit = (addr2 - addr1 == storage_size(v(1)) / 8)
-  end function is_contiguous_qubit
-
-  !> Helper: verify stride == 1 for param arrays by pointer arithmetic
-  logical function is_contiguous_param(v)
-    use, intrinsic :: iso_c_binding, only : c_loc, c_int64_t
-    real(c_double), target, intent(in) :: v(:)
-    integer(c_int64_t) :: addr1, addr2
-    if (size(v) < 2) then
-      is_contiguous_param = .true.
-      return
-    end if
-    addr1 = transfer(c_loc(v(1)), addr1)
-    addr2 = transfer(c_loc(v(2)), addr2)
-    is_contiguous_param = (addr2 - addr1 == storage_size(v(1)) / 8)
-  end function is_contiguous_param
-
   !> Regression test for optional num_clbits SEGV bug.
   !> Tests the exact sequence that triggered the merge-time crash.
   subroutine test_optional_clbits_regression()
@@ -563,56 +463,6 @@ contains
     call assert_true(kind(n) == kind(1_c_size_t), "num_instructions kind is c_size_t")
     call assert_eq_int_size_t(n, 4, "4 H gates == 4 instructions")
   end subroutine test_num_instructions_type
-
-  !> Test to_c() contract: unallocated arrays return c_null_ptr,
-  !> allocated arrays return non-null pointers.
-  subroutine test_to_c_contract()
-    use qiskit_arrays,       only : QubitArray, ParamArray, q, p, to_c
-    use, intrinsic :: iso_c_binding, only : c_ptr, c_associated
-    type(QubitArray) :: qa_empty, qa_full
-    type(ParamArray) :: pa_empty, pa_full
-    type(c_ptr)      :: ptr
-
-    call section("to_c() contract")
-
-    ! Unallocated -> must produce c_null_ptr
-    ptr = to_c(qa_empty)
-    call assert_true(.not. c_associated(ptr), "to_c(unallocated QubitArray) == null")
-
-    ptr = to_c(pa_empty)
-    call assert_true(.not. c_associated(ptr), "to_c(unallocated ParamArray) == null")
-
-    ! Allocated -> must produce non-null
-    qa_full = q(0)
-    ptr = to_c(qa_full)
-    call assert_true(c_associated(ptr), "to_c(q(0)) /= null")
-
-    pa_full = p(1.0_c_double)
-    ptr = to_c(pa_full)
-    call assert_true(c_associated(ptr), "to_c(p(1.0)) /= null")
-  end subroutine test_to_c_contract
-
-  !> Test QubitArray reassignment: verify that reassigning a QubitArray
-  !> properly deallocates the old allocation and creates a new one.
-  subroutine test_qubit_array_reassignment()
-    use qiskit_arrays, only : QubitArray, q
-    type(QubitArray) :: qa
-
-    call section("QubitArray reassignment (no leak)")
-
-    qa = q(0, 1)                              ! alloc size 2
-    call assert_eq_int(size(qa%v), 2, "after q(0,1): size 2")
-
-    qa = q(5)                                 ! realloc to size 1
-    call assert_eq_int(size(qa%v), 1, "after q(5): size 1")
-    call assert_eq_int(int(qa%v(1)), 5, "after q(5): value 5")
-
-    qa = q(2, 3, 4)                           ! realloc to size 3
-    call assert_eq_int(size(qa%v), 3, "after q(2,3,4): size 3")
-    call assert_eq_int(int(qa%v(1)), 2, "first element == 2")
-    call assert_eq_int(int(qa%v(2)), 3, "second element == 3")
-    call assert_eq_int(int(qa%v(3)), 4, "third element == 4")
-  end subroutine test_qubit_array_reassignment
 
   !> Test measure_all boundary conditions: nc == nq (exact match) and
   !> nc > nq (extra clbits) must both succeed. nc < nq triggers error stop.

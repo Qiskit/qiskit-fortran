@@ -1,4 +1,4 @@
-# qiskit-fortran
+# qiskit-f90
 
 Fortran ISO_C_BINDING interface to the [Qiskit C API](https://docs.quantum.ibm.com/api/qiskit-c).
 
@@ -6,7 +6,7 @@ Provides a two-layer binding that mirrors the architecture of
 [Qiskit.jl](https://github.com/Qiskit/Qiskit.jl) and
 [qiskit-cpp](https://github.com/Qiskit/qiskit-cpp):
 
-Fortran -> API (qiskit.f90) -> FFI (qiskit_c_api.f90) -> libqiskit (C/Rust)
+qiskit.f90 -> qiskit_circuit.f90 -> qiskit_c_api_circuit.f90 -> libqiskit (C/Rust)
 
 ---
 
@@ -14,7 +14,8 @@ Fortran -> API (qiskit.f90) -> FFI (qiskit_c_api.f90) -> libqiskit (C/Rust)
 
 | Requirement | Minimum version | Notes |
 |---|---|---|
-| Fortran compiler | gfortran 9 / ifort 18 / ifx 2023 | Needs Fortran 2018 (`FINAL`, `ERROR STOP` with message, `C_LOC`) |
+| Platform | macOS 13+ | Tested; Linux (glibc) should work but untested; Windows not supported |
+| Fortran compiler | gfortran 9+ | Needs Fortran 2018 (`FINAL`, `ERROR STOP` with message, `C_LOC`); ifort/ifx and Cray untested, contributions welcome |
 | CMake | 3.20 | |
 | Qiskit (Python) | 2.2 | Must be installed so the cext build works |
 | Rust toolchain | stable | Needed only to build the C extension |
@@ -23,8 +24,8 @@ Fortran -> API (qiskit.f90) -> FFI (qiskit_c_api.f90) -> libqiskit (C/Rust)
 
 ## Step 1 — Build the Qiskit C extension
 
-The shared library `libqiskit.so` (Linux) or `qiskit_cext.dll` (Windows) is
-generated from the Rust crate at `qiskit/crates/cext`.
+The shared library is generated from the Rust crate at `qiskit/crates/cext`.
+CMake automatically resolves `libqiskit.so` (Linux) or `libqiskit.dylib` (macOS).
 
 ```bash
 git clone https://github.com/Qiskit/qiskit.git
@@ -41,16 +42,16 @@ qiskit/dist/c/
 ├── include/
 │   └── qiskit.h
 └── lib/
-    └── libqiskit.so
+    └── libqiskit.so  # or libqiskit.dylib on macOS
 ```
 
 ---
 
-## Step 2 — Configure and build qiskit-fortran
+## Step 2 — Configure and build qiskit-f90
 
 ```bash
 git clone <this-repo>
-cd qiskit-fortran
+cd qiskit-f90
 
 cmake -B build \
       -DQISKIT_ROOT=/absolute/path/to/qiskit \
@@ -63,28 +64,18 @@ cmake --build build -j$(nproc)
 
 The build system includes several intelligent features:
 
-- **Automatic Python detection**: Detects the active conda environment and configures library paths
-- **macOS library path handling**: Automatically resolves `libc++.1.dylib` and `libpython3.12.dylib` dependencies
-- **Rpath configuration**: Sets proper runtime library search paths for the test executable
-- **CTest integration**: Configures test environment with correct `DYLD_LIBRARY_PATH` on macOS
-- **Multi-compiler support**: Works with gfortran, Intel ifx, and Cray compilers
+- **RPATH configuration**: embeds runtime library search paths directly into the test binary so no environment variables are needed at runtime
+- **Automatic Python detection**: locates the active conda environment or system Python to resolve the `libpython` transitive dependency of `libqiskit`
+- **Multi-compiler support**: gfortran validated; other compilers untested
 
 ### Build Variants
 
-For a Debug build with runtime bounds checking (gfortran):
+For a Debug build with runtime bounds checking:
 ```bash
 cmake -B build-debug \
       -DQISKIT_ROOT=/absolute/path/to/qiskit \
       -DCMAKE_BUILD_TYPE=Debug
 cmake --build build-debug -j$(nproc)
-```
-
-For Intel oneAPI (ifx):
-```bash
-FC=ifx cmake -B build-intel \
-             -DQISKIT_ROOT=/absolute/path/to/qiskit \
-             -DCMAKE_BUILD_TYPE=Release
-cmake --build build-intel -j$(nproc)
 ```
 
 ---
@@ -93,7 +84,7 @@ cmake --build build-intel -j$(nproc)
 
 ### Using CTest (recommended)
 
-The CMakeLists.txt automatically configures the test environment with proper library paths:
+Runtime library paths are embedded via RPATH at build time. No environment variable setup is required.
 
 ```bash
 # Run tests
@@ -102,24 +93,25 @@ cd build && make test
 make run_test
 ```
 
-### Cross-Platform Library Path Configuration
-
-The CMakeLists.txt includes automatic, cross-platform library path detection:
-- **Detects Python library path** dynamically from conda environment (`$CONDA_PREFIX`) or system Python
-- **Platform-aware environment variables**: `DYLD_LIBRARY_PATH` (macOS) or `LD_LIBRARY_PATH` (Linux)
-- **Dynamic path resolution**: Automatically includes system libraries and Python libraries
-- **No hardcoded paths**: All library paths are detected at configure time
-- **Resolves dependencies** for `libc++.1.dylib` and `libpython3.12.dylib` required by the Rust-built Qiskit library
-
-Both `make test` and `make run_test` automatically set the correct library paths for your platform.
+**Linux note:** The same RPATH mechanism applies (`DT_RUNPATH` in the ELF binary). If you build outside CMake or need to override, `export LD_LIBRARY_PATH=/path/to/dist/c/lib` is sufficient, matching Qiskit's own install guide.
 
 Expected output (all passing):
 ```
+--- Gate enum constants verification ---
+  [PASS] QkGate_GlobalPhase == 0
+  [PASS] QkGate_H == 1
+  ...
+  [PASS] QkGate_CCX == 45
+
 --- Construction ---
   [PASS] num_qubits == 5
   [PASS] num_clbits == 5
   [PASS] empty circuit has 0 instructions
-  [PASS] re-init num_qubits == 3
+  ...
+
+--- Bell state ---
+  [PASS] after H: 1 instruction
+  [PASS] after CX: 2 instructions
   ...
 
 --- Large circuit (100 qubits) ---
@@ -129,7 +121,7 @@ Expected output (all passing):
   [PASS] after measure_all: 350 instructions
 
 ========================================
-  PASS : 80
+  PASS : 90
   FAIL : 0
 ========================================
 ```
@@ -148,7 +140,7 @@ path:
 
 ```cmake
 find_package(qiskit_fortran REQUIRED
-  HINTS /path/to/qiskit-fortran/build)
+  HINTS /path/to/qiskit-f90/build)
 
 add_executable(my_hpc_code main.f90)
 target_link_libraries(my_hpc_code PRIVATE qiskit_fortran::qiskit_fortran)
@@ -158,7 +150,7 @@ target_link_libraries(my_hpc_code PRIVATE qiskit_fortran::qiskit_fortran)
 
 ```bash
 QISKIT_ROOT=/path/to/qiskit
-BUILD=/path/to/qiskit-fortran/build
+BUILD=/path/to/qiskit-f90/build
 
 gfortran -std=f2018 -O3 \
   -I${BUILD}/modules \
@@ -185,36 +177,20 @@ remember.  The circuit is released automatically when the variable goes out of
 scope.
 Re-initialisation is safe.
 
-### Array handling for parallelization
+### Direct C dispatch
 
-The `qiskit_arrays` module provides `QubitArray` and `ParamArray` types with contiguous allocatable components. These arrays are used internally by all gate operations and can be used directly in HPC workflows.
-
-**Key properties:**
-- **Contiguous memory**: `ALLOCATABLE` guarantees stride-1 layout — enables SIMD vectorization and direct `MPI_Send` without `MPI_Pack`
-- **No aliasing**: Lack of `POINTER` attribute allows compiler to assume independence between arrays: permits loop hoisting and instruction reordering
-- **Single ABI boundary**: All Fortran-C conversions (`c_loc`) happen in one place (`to_c` functions), making the codebase auditable
-
-**Example — MPI circuit distribution:**
-```fortran
-use qiskit
-type(QubitArray) :: qa
-qa = q(0, 1, 2)  ! Contiguous allocatable
-call MPI_Send(qa%v, size(qa%v), MPI_INT32_T, dest, tag, comm, ierr)
-```
-
-The `q()` and `p()` constructors are exported by `use qiskit` for advanced use cases. Typical gate calls use them internally and require no explicit array handling.
+Gate operations use direct C pointer dispatch without intermediate array allocations. Qubit indices and parameters are passed as stack-allocated arrays directly to the C API via `c_loc()`.
 
 ---
 
-## Memory safety checklist
+## Memory Safety checklist
 
 | Concern | How it is addressed |
 |---|---|
 | Double-free | `FINAL` sets `ptr = c_null_ptr` after free; `c_associated` guard in `init` |
 | Leak on re-init | `init` calls `qk_circuit_free` before allocating a new circuit |
 | Leak on scope exit | `FINAL` destructor fires unconditionally |
-| NULL dereference | Every gate method calls `check_rc`; a null circuit pointer produces `QkExitCode_NullPointerError` from the C side |
-| Array out-of-bounds | Qubit index validation is delegated to the C API (`QkExitCode_IndexError`) |
+| Error Handling | Every gate method calls `check_rc`; a method to check for relevant C-API exit code and raise a fortran native error accordingly |
 
 ---
 

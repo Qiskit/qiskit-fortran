@@ -7,7 +7,6 @@ module qiskit_circuit
   use qiskit_c_api_types,   only : QK_QUBIT_KIND
   use qiskit_c_api_circuit
   use qiskit_utils,         only : check_rc, to_qubit
-  use qiskit_arrays,        only : QubitArray, ParamArray, q, p, to_c
 
   implicit none (type, external)
   private
@@ -58,32 +57,30 @@ contains
 
   ! Internal gate dispatch - converts Fortran arrays to C ABI
   subroutine dispatch_gate(ptr, gate_id, qubits, params)
-    type(c_ptr),      intent(in)           :: ptr
-    integer(c_int),   intent(in)           :: gate_id
-    type(QubitArray), intent(in)           :: qubits
-    type(ParamArray), intent(in), optional :: params
+    type(c_ptr),                intent(in)           :: ptr
+    integer(c_int),             intent(in)           :: gate_id
+    integer(QK_QUBIT_KIND), target, intent(in)       :: qubits(:)
+    real(c_double),         target, intent(in), optional :: params(:)
 
     integer(c_int) :: rc
+    type(c_ptr)    :: qubit_ptr, param_ptr
 
     if (.not. c_associated(ptr)) &
         error stop "[qiskit_circuit] dispatch_gate: uninitialised circuit"
 
-    rc = qk_circuit_gate(ptr, gate_id, to_c(qubits), merge_param_ptr(params))
+    ! Direct c_loc on Fortran arrays - no intermediate allocations
+    qubit_ptr = c_loc(qubits(1))
+    
+    if (present(params)) then
+      param_ptr = c_loc(params(1))
+    else
+      param_ptr = c_null_ptr
+    end if
+
+    rc = qk_circuit_gate(ptr, gate_id, qubit_ptr, param_ptr)
 
     call check_rc(rc, "dispatch_gate")
   end subroutine dispatch_gate
-
-  ! Helper to convert optional parameter array to C pointer
-  function merge_param_ptr(params) result(ptr)
-    type(ParamArray), intent(in), optional :: params
-    type(c_ptr) :: ptr
-
-    if (present(params)) then
-      ptr = to_c(params)
-    else
-      ptr = c_null_ptr
-    end if
-  end function merge_param_ptr
 
   !> @brief Initialize quantum circuit
   !> @param num_qubits number of qubits
@@ -145,7 +142,10 @@ contains
   subroutine qc_h(self, qubit)
     class(QuantumCircuit), intent(inout) :: self
     integer, intent(in) :: qubit
-    call dispatch_gate(self%ptr, QkGate_H, q(qubit))
+    integer(QK_QUBIT_KIND) :: q_arr(1)
+    
+    q_arr(1) = to_qubit(qubit)
+    call dispatch_gate(self%ptr, QkGate_H, q_arr)
   end subroutine qc_h
 
   !> @brief Apply Pauli-X gate
@@ -153,7 +153,10 @@ contains
   subroutine qc_x(self, qubit)
     class(QuantumCircuit), intent(inout) :: self
     integer, intent(in) :: qubit
-    call dispatch_gate(self%ptr, QkGate_X, q(qubit))
+    integer(QK_QUBIT_KIND) :: q_arr(1)
+    
+    q_arr(1) = to_qubit(qubit)
+    call dispatch_gate(self%ptr, QkGate_X, q_arr)
   end subroutine qc_x
 
   !> @brief Apply Pauli-Y gate
@@ -161,7 +164,10 @@ contains
   subroutine qc_y(self, qubit)
     class(QuantumCircuit), intent(inout) :: self
     integer, intent(in) :: qubit
-    call dispatch_gate(self%ptr, QkGate_Y, q(qubit))
+    integer(QK_QUBIT_KIND) :: q_arr(1)
+    
+    q_arr(1) = to_qubit(qubit)
+    call dispatch_gate(self%ptr, QkGate_Y, q_arr)
   end subroutine qc_y
 
   !> @brief Apply Pauli-Z gate
@@ -169,7 +175,10 @@ contains
   subroutine qc_z(self, qubit)
     class(QuantumCircuit), intent(inout) :: self
     integer, intent(in) :: qubit
-    call dispatch_gate(self%ptr, QkGate_Z, q(qubit))
+    integer(QK_QUBIT_KIND) :: q_arr(1)
+    
+    q_arr(1) = to_qubit(qubit)
+    call dispatch_gate(self%ptr, QkGate_Z, q_arr)
   end subroutine qc_z
 
   !> @brief Apply S gate
@@ -177,7 +186,10 @@ contains
   subroutine qc_s(self, qubit)
     class(QuantumCircuit), intent(inout) :: self
     integer, intent(in) :: qubit
-    call dispatch_gate(self%ptr, QkGate_S, q(qubit))
+    integer(QK_QUBIT_KIND) :: q_arr(1)
+    
+    q_arr(1) = to_qubit(qubit)
+    call dispatch_gate(self%ptr, QkGate_S, q_arr)
   end subroutine qc_s
 
   !> @brief Apply S-dagger gate
@@ -185,7 +197,10 @@ contains
   subroutine qc_sdg(self, qubit)
     class(QuantumCircuit), intent(inout) :: self
     integer, intent(in) :: qubit
-    call dispatch_gate(self%ptr, QkGate_Sdg, q(qubit))
+    integer(QK_QUBIT_KIND) :: q_arr(1)
+    
+    q_arr(1) = to_qubit(qubit)
+    call dispatch_gate(self%ptr, QkGate_Sdg, q_arr)
   end subroutine qc_sdg
 
   !> @brief Apply sqrt(X) gate
@@ -193,7 +208,10 @@ contains
   subroutine qc_sx(self, qubit)
     class(QuantumCircuit), intent(inout) :: self
     integer, intent(in) :: qubit
-    call dispatch_gate(self%ptr, QkGate_SX, q(qubit))
+    integer(QK_QUBIT_KIND) :: q_arr(1)
+    
+    q_arr(1) = to_qubit(qubit)
+    call dispatch_gate(self%ptr, QkGate_SX, q_arr)
   end subroutine qc_sx
 
   !> @brief Apply T gate
@@ -201,7 +219,10 @@ contains
   subroutine qc_t(self, qubit)
     class(QuantumCircuit), intent(inout) :: self
     integer, intent(in) :: qubit
-    call dispatch_gate(self%ptr, QkGate_T, q(qubit))
+    integer(QK_QUBIT_KIND) :: q_arr(1)
+    
+    q_arr(1) = to_qubit(qubit)
+    call dispatch_gate(self%ptr, QkGate_T, q_arr)
   end subroutine qc_t
 
   !> @brief Apply T-dagger gate
@@ -209,7 +230,10 @@ contains
   subroutine qc_tdg(self, qubit)
     class(QuantumCircuit), intent(inout) :: self
     integer, intent(in) :: qubit
-    call dispatch_gate(self%ptr, QkGate_Tdg, q(qubit))
+    integer(QK_QUBIT_KIND) :: q_arr(1)
+    
+    q_arr(1) = to_qubit(qubit)
+    call dispatch_gate(self%ptr, QkGate_Tdg, q_arr)
   end subroutine qc_tdg
 
   !> @brief Apply rotation around X-axis
@@ -219,7 +243,12 @@ contains
     class(QuantumCircuit), intent(inout) :: self
     real(c_double), intent(in) :: theta
     integer,        intent(in) :: qubit
-    call dispatch_gate(self%ptr, QkGate_Rx, q(qubit), p(theta))
+    integer(QK_QUBIT_KIND) :: q_arr(1)
+    real(c_double)         :: p_arr(1)
+    
+    q_arr(1) = to_qubit(qubit)
+    p_arr(1) = theta
+    call dispatch_gate(self%ptr, QkGate_Rx, q_arr, p_arr)
   end subroutine qc_rx
 
   !> @brief Apply rotation around Y-axis
@@ -229,7 +258,12 @@ contains
     class(QuantumCircuit), intent(inout) :: self
     real(c_double), intent(in) :: theta
     integer,        intent(in) :: qubit
-    call dispatch_gate(self%ptr, QkGate_Ry, q(qubit), p(theta))
+    integer(QK_QUBIT_KIND) :: q_arr(1)
+    real(c_double)         :: p_arr(1)
+    
+    q_arr(1) = to_qubit(qubit)
+    p_arr(1) = theta
+    call dispatch_gate(self%ptr, QkGate_Ry, q_arr, p_arr)
   end subroutine qc_ry
 
   !> @brief Apply rotation around Z-axis
@@ -239,7 +273,12 @@ contains
     class(QuantumCircuit), intent(inout) :: self
     real(c_double), intent(in) :: lam
     integer,        intent(in) :: qubit
-    call dispatch_gate(self%ptr, QkGate_Rz, q(qubit), p(lam))
+    integer(QK_QUBIT_KIND) :: q_arr(1)
+    real(c_double)         :: p_arr(1)
+    
+    q_arr(1) = to_qubit(qubit)
+    p_arr(1) = lam
+    call dispatch_gate(self%ptr, QkGate_Rz, q_arr, p_arr)
   end subroutine qc_rz
 
   !> @brief Apply phase gate
@@ -249,7 +288,12 @@ contains
     class(QuantumCircuit), intent(inout) :: self
     real(c_double), intent(in) :: lam
     integer,        intent(in) :: qubit
-    call dispatch_gate(self%ptr, QkGate_Phase, q(qubit), p(lam))
+    integer(QK_QUBIT_KIND) :: q_arr(1)
+    real(c_double)         :: p_arr(1)
+    
+    q_arr(1) = to_qubit(qubit)
+    p_arr(1) = lam
+    call dispatch_gate(self%ptr, QkGate_Phase, q_arr, p_arr)
   end subroutine qc_p
 
   !> @brief Apply general single-qubit unitary gate U(θ,φ,λ)
@@ -262,7 +306,14 @@ contains
     class(QuantumCircuit), intent(inout) :: self
     real(c_double), intent(in) :: theta, phi, lam
     integer,        intent(in) :: qubit
-    call dispatch_gate(self%ptr, QkGate_U, q(qubit), p(theta, phi, lam))
+    integer(QK_QUBIT_KIND) :: q_arr(1)
+    real(c_double)         :: p_arr(3)
+    
+    q_arr(1) = to_qubit(qubit)
+    p_arr(1) = theta
+    p_arr(2) = phi
+    p_arr(3) = lam
+    call dispatch_gate(self%ptr, QkGate_U, q_arr, p_arr)
   end subroutine qc_u
 
   !> @brief Apply controlled-X (CNOT) gate
@@ -271,7 +322,11 @@ contains
   subroutine qc_cx(self, ctrl, tgt)
     class(QuantumCircuit), intent(inout) :: self
     integer, intent(in) :: ctrl, tgt
-    call dispatch_gate(self%ptr, QkGate_CX, q(ctrl, tgt))
+    integer(QK_QUBIT_KIND) :: q_arr(2)
+    
+    q_arr(1) = to_qubit(ctrl)
+    q_arr(2) = to_qubit(tgt)
+    call dispatch_gate(self%ptr, QkGate_CX, q_arr)
   end subroutine qc_cx
 
   !> @brief Apply controlled-Y gate
@@ -280,7 +335,11 @@ contains
   subroutine qc_cy(self, ctrl, tgt)
     class(QuantumCircuit), intent(inout) :: self
     integer, intent(in) :: ctrl, tgt
-    call dispatch_gate(self%ptr, QkGate_CY, q(ctrl, tgt))
+    integer(QK_QUBIT_KIND) :: q_arr(2)
+    
+    q_arr(1) = to_qubit(ctrl)
+    q_arr(2) = to_qubit(tgt)
+    call dispatch_gate(self%ptr, QkGate_CY, q_arr)
   end subroutine qc_cy
 
   !> @brief Apply controlled-Z gate
@@ -289,7 +348,11 @@ contains
   subroutine qc_cz(self, ctrl, tgt)
     class(QuantumCircuit), intent(inout) :: self
     integer, intent(in) :: ctrl, tgt
-    call dispatch_gate(self%ptr, QkGate_CZ, q(ctrl, tgt))
+    integer(QK_QUBIT_KIND) :: q_arr(2)
+    
+    q_arr(1) = to_qubit(ctrl)
+    q_arr(2) = to_qubit(tgt)
+    call dispatch_gate(self%ptr, QkGate_CZ, q_arr)
   end subroutine qc_cz
 
   !> @brief Apply SWAP gate
@@ -298,7 +361,11 @@ contains
   subroutine qc_swap(self, q0, q1)
     class(QuantumCircuit), intent(inout) :: self
     integer, intent(in) :: q0, q1
-    call dispatch_gate(self%ptr, QkGate_Swap, q(q0, q1))
+    integer(QK_QUBIT_KIND) :: q_arr(2)
+    
+    q_arr(1) = to_qubit(q0)
+    q_arr(2) = to_qubit(q1)
+    call dispatch_gate(self%ptr, QkGate_Swap, q_arr)
   end subroutine qc_swap
 
   !> @brief Apply echoed cross-resonance gate
@@ -307,7 +374,11 @@ contains
   subroutine qc_ecr(self, ctrl, tgt)
     class(QuantumCircuit), intent(inout) :: self
     integer, intent(in) :: ctrl, tgt
-    call dispatch_gate(self%ptr, QkGate_ECR, q(ctrl, tgt))
+    integer(QK_QUBIT_KIND) :: q_arr(2)
+    
+    q_arr(1) = to_qubit(ctrl)
+    q_arr(2) = to_qubit(tgt)
+    call dispatch_gate(self%ptr, QkGate_ECR, q_arr)
   end subroutine qc_ecr
 
   !> @brief Measure qubit into classical bit
