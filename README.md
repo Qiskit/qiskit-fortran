@@ -139,11 +139,11 @@ path:
 ### CMake (recommended)
 
 ```cmake
-find_package(qiskit_fortran REQUIRED
+find_package(qiskit-f90 REQUIRED
   HINTS /path/to/qiskit-f90/build)
 
 add_executable(my_hpc_code main.f90)
-target_link_libraries(my_hpc_code PRIVATE qiskit_fortran::qiskit_fortran)
+target_link_libraries(my_hpc_code PRIVATE qiskit-f90::qiskit-f90)
 ```
 
 ### Manual compilation (gfortran)
@@ -207,7 +207,7 @@ doxygen -g Doxyfile
 
 Edit `Doxyfile` to set:
 ```
-PROJECT_NAME           = "qiskit-fortran"
+PROJECT_NAME           = "qiskit-f90"
 INPUT                  = src/
 RECURSIVE              = YES
 OPTIMIZE_FOR_FORTRAN   = YES
