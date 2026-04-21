@@ -78,22 +78,18 @@ endif()
 #
 # Source order matters for Fortran — modules must be compiled before their
 # dependents. Dependency chain:
-#   qiskit_c_api_types -> qiskit_c_api_circuit, qiskit_utils
+#   qiskit_c_api_types, qiskit_c_api_circuit -> qiskit_utils, qiskit_circuit
 #   qiskit_circuit -> qiskit
 # ---------------------------------------------------------------------------
 add_library(qiskit-f90 STATIC
   src/qiskit_c_api_types.f90
   src/qiskit_c_api_circuit.f90
-  src/qiskit_c_api.f90
   src/qiskit_utils.f90
   src/qiskit_circuit.f90
   src/qiskit.f90)
 
-# Expose the Qiskit C header so that any downstream C/C++ code that also
-# includes qiskit.h finds it without extra -I flags.
 target_include_directories(qiskit-f90
-  PUBLIC  "${QISKIT_INCLUDE_DIR}"
-  PRIVATE "${CMAKE_Fortran_MODULE_DIRECTORY}")
+  PRIVATE "${QISKIT_INCLUDE_DIR}")
 
 target_link_libraries(qiskit-f90
   PUBLIC "${QISKIT_LIB}")
