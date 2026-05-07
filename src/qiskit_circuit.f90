@@ -4,9 +4,17 @@
 module qiskit_circuit
   use, intrinsic :: iso_c_binding, only : &
       c_ptr, c_null_ptr, c_associated, c_loc, c_int, c_double, c_size_t
+  
+#ifdef USE_SWIG_BINDINGS
+  ! SWIG mode: use unified module
+  use qiskit_c_api
+#else
+  ! Handwritten mode: use separate modules
   use qiskit_c_api_types,   only : QK_QUBIT_KIND
   use qiskit_c_api_circuit
-  use qiskit_utils,         only : check_rc, to_qubit
+#endif
+  
+  use qiskit_utils,         only : check_rc, to_qubit, QK_QUBIT_KIND
 
   implicit none (type, external)
   private

@@ -2,13 +2,27 @@
 !>
 !> Provides error checking and type conversion utilities.
 module qiskit_utils
-  use, intrinsic :: iso_c_binding, only : c_int
+  use, intrinsic :: iso_c_binding, only : c_int, c_int32_t
+  
+#ifdef USE_SWIG_BINDINGS
+  ! SWIG mode: use unified module
+  use qiskit_c_api, only : QK_QUBIT_KIND, &
+      QkExitCode_Success, &
+      QkExitCode_CInputError, &
+      QkExitCode_NullPointerError, &
+      QkExitCode_AlignmentError, &
+      QkExitCode_IndexError, &
+      QkExitCode_ArithmeticError, &
+      QkExitCode_MismatchedQubits
+#else
+  ! Handwritten mode: use separate modules
   use qiskit_c_api_types
+#endif
 
   implicit none (type, external)
   private
 
-  public :: check_rc, to_qubit
+  public :: check_rc, to_qubit, QK_QUBIT_KIND
 
 contains
 

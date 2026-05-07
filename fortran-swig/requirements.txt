@@ -1,0 +1,22 @@
+# Python dependencies for building SWIG-Fortran
+# Install with: pip install -r requirements.txt
+
+# Build tools
+setuptools>=65.0.0
+wheel>=0.37.0
+
+# PCRE2 (Perl Compatible Regular Expressions)
+# Note: On most systems, you'll need to install PCRE2 via system package manager:
+#   - macOS: brew install pcre2
+#   - Ubuntu/Debian: sudo apt-get install libpcre2-dev
+#   - Fedora/RHEL: sudo dnf install pcre2-devel
+
+# Autotools (if not available on system)
+# Note: These are typically installed via system package manager:
+#   - macOS: brew install autoconf automake libtool
+#   - Ubuntu/Debian: sudo apt-get install autoconf automake libtool
+#   - Fedora/RHEL: sudo dnf install autoconf automake libtool
+
+# Optional: For documentation generation
+# sphinx>=4.0.0
+# sphinx-rtd-theme>=1.0.0
