@@ -18,9 +18,11 @@ build/
 # Executables
 test_qiskit
 run_test
+*.sh
 
 # Test artifacts
 test/Testing/
+compiler-test-artifacts
 
 # External repositories (qiskit is built separately)
 qiskit/

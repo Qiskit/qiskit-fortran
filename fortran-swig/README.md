@@ -80,3 +80,6 @@ The Python scripts handle type inference and interface generation automatically.
 - **SWIG-Fortran**: https://github.com/swig-fortran/swig
 - **Qiskit C API**: https://qiskit.org/documentation/
 - **Fortran ISO C Binding**: https://gcc.gnu.org/onlinedocs/gfortran/ISO_005fC_005fBINDING.html
+
+## License
+[Apache License 2.0](https://github.com/Qiskit/qiskit-cpp/blob/main/LICENSE.txt)
