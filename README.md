@@ -30,8 +30,6 @@ CMake automatically resolves `libqiskit.so` (Linux) or `libqiskit.dylib` (macOS)
 ```bash
 git clone https://github.com/Qiskit/qiskit.git
 cd qiskit
-pip install -e .
-
 # Build the C extension
 make c
 ```
