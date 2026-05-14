@@ -28,7 +28,7 @@
 
 program test_qiskit
   use qiskit
-  use qiskit_c_api, only : QkGate_H, QkGate_CX, qk_gate_num_qubits, qk_gate_num_params
+  use qiskit_c_api_circuit, only: QkGate_H, QkGate_CX, qk_gate_num_qubits, qk_gate_num_params
   use qiskit_c_api_circuit  ! Import all gate constants for verification
   use, intrinsic :: iso_c_binding, only : c_double, c_int32_t, c_int, c_size_t
   implicit none (type, external)
