@@ -29,9 +29,9 @@
 program test_qiskit
   use qiskit
 #ifdef USE_SWIG_BINDINGS
-  ! SWIG mode: use unified module
-  use qiskit_c_api, only: QkGate_H, QkGate_CX, qk_gate_num_qubits, qk_gate_num_params
-  use qiskit_c_api  ! Import all gate constants for verification
+  ! use unified, generated module
+  use qiskit_swigf, only: QkGate_H, QkGate_CX, qk_gate_num_qubits, qk_gate_num_params
+  use qiskit_swigf  ! Import all gate constants for verification
 #else
   ! Handwritten mode: use separate modules
   use qiskit_c_api_circuit, only: QkGate_H, QkGate_CX, qk_gate_num_qubits, qk_gate_num_params

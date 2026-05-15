@@ -68,30 +68,35 @@ message(STATUS "Qiskit include : ${QISKIT_INCLUDE_DIR}")
 # SWIG Configuration (if enabled)
 # ---------------------------------------------------------------------------
 if(USE_SWIG_BINDINGS)
-  message(STATUS "Using SWIG-generated bindings (pre-generated files)")
+  message(STATUS "Using SWIG-generated direct bindings (fortranbindc mode)")
   
-  # Use pre-generated SWIG C++ wrapper
-  set(SWIG_OUTPUT_CXX "${CMAKE_SOURCE_DIR}/fortran-swig/qiskit_wrap.cxx")
+  # Use pre-generated SWIG files
+  set(SWIG_OUTPUT_C "${CMAKE_SOURCE_DIR}/fortran-swig/qiskit_swigf_wrap.c")
+  set(SWIG_OUTPUT_F90 "${CMAKE_SOURCE_DIR}/fortran-swig/qiskit_swigf.f90")
   
   # Verify pre-generated files exist
-  if(NOT EXISTS "${SWIG_OUTPUT_CXX}")
+  if(NOT EXISTS "${SWIG_OUTPUT_C}")
     message(FATAL_ERROR
-      "Pre-generated SWIG wrapper not found at ${SWIG_OUTPUT_CXX}. "
-      "Run the SWIG generator script to create it.")
+      "Pre-generated SWIG C wrapper not found at ${SWIG_OUTPUT_C}. "
+      "Run: cd fortran-swig && swig -fortran -I<qiskit_include_path> qiskit_swigf.i")
+  endif()
+  if(NOT EXISTS "${SWIG_OUTPUT_F90}")
+    message(FATAL_ERROR
+      "Pre-generated SWIG Fortran module not found at ${SWIG_OUTPUT_F90}. "
+      "Run: cd fortran-swig && swig -fortran -I<qiskit_include_path> qiskit_swigf.i")
   endif()
   
-  # Enable C++ for compiling the wrapper
-  enable_language(CXX)
+  # Enable C for compiling the wrapper
+  enable_language(C)
   
-  # Compile the pre-generated C++ wrapper
-  add_library(qiskit_swig_wrapper OBJECT "${SWIG_OUTPUT_CXX}")
+  # Compile the pre-generated C wrapper
+  add_library(qiskit_swig_wrapper OBJECT "${SWIG_OUTPUT_C}")
   target_include_directories(qiskit_swig_wrapper PRIVATE "${QISKIT_INCLUDE_DIR}")
+  target_compile_definitions(qiskit_swig_wrapper PRIVATE QISKIT_C_PYTHON_INTERFACE=0)
   
   # Set the C API source files for SWIG build
-  # Use ONLY the pre-generated qiskit_c_api.f90 which contains all enums and interfaces
-  # The handwritten wrapper files are NOT used in SWIG mode
-  set(QISKIT_C_API_SOURCES
-    "${CMAKE_SOURCE_DIR}/fortran-swig/qiskit_c_api.f90")
+  # Use ONLY the SWIG-generated qiskit_swigf.f90 which contains all types, enums and interfaces
+  set(QISKIT_C_API_SOURCES "${SWIG_OUTPUT_F90}")
   set(QISKIT_EXTRA_OBJECTS $<TARGET_OBJECTS:qiskit_swig_wrapper>)
 else()
   message(STATUS "Using hand-written bindings")
@@ -104,32 +109,18 @@ endif()
 # ---------------------------------------------------------------------------
 # Compiler flags
 # ---------------------------------------------------------------------------
-if(CMAKE_Fortran_COMPILER_ID MATCHES "GNU")
-  # -std=f2018: Fortran 2018 (covers FINAL, ERROR STOP with message, c_loc)
-  # -fcheck=all: runtime bounds/null checks
-  # -fbacktrace: better error messages with line numbers
-  # -g: debug symbols for better stack traces
-  add_compile_options(
-    $<$<COMPILE_LANGUAGE:Fortran>:-std=f2018>
-    $<$<COMPILE_LANGUAGE:Fortran>:-Wall>
-    $<$<COMPILE_LANGUAGE:Fortran>:-Wextra>
-    $<$<COMPILE_LANGUAGE:Fortran>:-fcheck=all>
-    $<$<COMPILE_LANGUAGE:Fortran>:-fbacktrace>
-    $<$<COMPILE_LANGUAGE:Fortran>:-g>
-    $<$<AND:$<COMPILE_LANGUAGE:Fortran>,$<CONFIG:Release>>:-O2>)
-  
-  # Enable preprocessor for conditional compilation (needed for both modes)
-  add_compile_options($<$<COMPILE_LANGUAGE:Fortran>:-cpp>)
-  
-  # Add preprocessor flag for SWIG bindings
-  if(USE_SWIG_BINDINGS)
-    add_compile_options($<$<COMPILE_LANGUAGE:Fortran>:-DUSE_SWIG_BINDINGS>)
-  endif()
-else()
-  message(WARNING
-    "Untested Fortran compiler: ${CMAKE_Fortran_COMPILER_ID}. "
-    "Only gfortran has been validated. Proceeding without compiler-specific flags.")
+# Enable preprocessor for conditional compilation
+add_compile_options($<$<COMPILE_LANGUAGE:Fortran>:-cpp>)
+
+# Add preprocessor flag for SWIG bindings
+if(USE_SWIG_BINDINGS)
+  add_compile_options($<$<COMPILE_LANGUAGE:Fortran>:-DUSE_SWIG_BINDINGS>)
 endif()
+
+# Generic flags that work across most Fortran compilers
+add_compile_options(
+  $<$<COMPILE_LANGUAGE:Fortran>:-g>
+  $<$<AND:$<COMPILE_LANGUAGE:Fortran>,$<CONFIG:Release>>:-O2>)
 
 # ---------------------------------------------------------------------------
 # Library: qiskit_fortran

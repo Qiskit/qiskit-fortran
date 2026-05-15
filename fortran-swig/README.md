@@ -1,12 +1,12 @@
 # Qiskit Fortran Bindings via SWIG
 
-This directory contains a Python-based pipeline that generates clean Fortran bindings from the Qiskit C API. We use SWIG as a parsing tool to extract type information, then generate our own canonical `bind(C)` interfaces that call the C library directly.
+This directory contains SWIG interface files for generating direct Fortran bindings to the Qiskit C API. We use SWIG's `%fortranbindc` feature to generate zero-overhead `bind(C)` interfaces that call the C library directly.
 
 ## SWIG-Based Generation Tutorial
 
-Here's how to regenerate the bindings from scratch:
+Here's how to generate the bindings from scratch:
 
-**Step 1: Install SWIG-Fortran**
+**Install SWIG-Fortran**
 
 ```bash
 # Clone and build SWIG-Fortran
@@ -22,46 +22,41 @@ export DYLD_LIBRARY_PATH=$HOME/miniconda3/lib:$DYLD_LIBRARY_PATH
 
 **Note**: This is a template installation process. For detailed instructions, platform-specific requirements, and troubleshooting, refer to the official repository: https://github.com/swig-fortran/swig
 
-**Step 2: Run SWIG to parse the C headers**
+**Generate bindings with SWIG**
 
 ```bash
 cd fortran-swig
-~/.local/bin/swig -fortran -c++ -I../qiskit/dist/c/include qiskit.i
+~/.local/bin/swig -fortran -I/path/to/qiskit/qiskit/capi/include qiskit_swigf.i
 ```
 
-This generates `qiskit_swig_api.f90` and `qiskit_wrap.cxx`. We only use the `.f90` file as a schema—the C++ wrapper is discarded.
+Replace `/path/to/qiskit` with your actual Qiskit installation path.
 
-**Step 3: Generate canonical bindings**
+This generates:
+- `qiskit_swigf.f90` - Fortran module with `bind(C)` interfaces
+- `qiskit_swigf_wrap.c` - Minimal C wrapper (mostly empty with `fortranbindc`)
 
-```bash
-python generate_bindings.py
-```
-
-This reads `qiskit_swig_api.f90`, extracts type information, and writes `qiskit_c_api.f90`—a clean module with proper `bind(C)` interfaces that link directly to `libqiskit_c`. No SWIG runtime needed.
-
-**Step 4: Use the bindings**
-
-The generated `qiskit_c_api.f90` is a drop-in replacement for handwritten interfaces. Your high-level Fortran code (like `qiskit_circuit.f90`) works identically whether you use generated or handwritten bindings.
+Note: `qiskit_swigf.i` declares `typedef struct _object PyObject;` as an opaque placeholder because `qiskit/funcs.h` still contains Python-bridge declarations guarded by `QISKIT_C_PYTHON_INTERFACE`.
+Even when those functions are ignored for Fortran generation, SWIG still compiles the raw `%{ ... %}` include block, so removing the typedef causes an unknown-type `PyObject` compile failure.
 
 ## Architecture & Design Decisions
 
-We use SWIG as a C header parser, not as a binding generator. SWIG's Fortran output is verbose and includes a C++ wrapper layer we don't need. Instead, we parse the SWIG-generated Fortran module to extract function signatures and type information, then emit our own clean `bind(C)` interfaces.
+We use SWIG's `%fortranbindc` feature to generate direct C-to-Fortran bindings via ISO_C_BINDING. This approach provides zero-overhead interop—no wrapper layer, no runtime dependencies, just native Fortran calling C functions directly.
 
-The trade-off: SWIG gives us comprehensive coverage of the entire C API automatically, but its output isn't production-ready. Our Python scripts (`generate_bindings.py` and `interface_generator.py`) transform that verbose output into idiomatic Fortran that calls the C library directly. Our generated code is clean, idiomatic Fortran that matches the handwritten style. We get SWIG's comprehensive API coverage without its runtime overhead or verbose syntax.
+The key directive `%fortran_struct` tells SWIG to wrap C structs as native Fortran `bind(C)` derived types. Without this, structs would be opaque pointers requiring wrapper functions for field access. With it, we get direct field access (`mystruct%field`) with zero overhead.
 
-**SWIG's value:** SWIG does the hard work of C-to-Fortran type mapping—handling preprocessor macros, typedefs, and struct layouts. Our Python parses SWIG's Fortran output (not C headers), so we leverage SWIG's type translation.
+**SWIG's value:** SWIG handles the complex C-to-Fortran type mapping automatically (preprocessor macros, typedefs, struct layouts, and function signatures). The `%fortranbindc` mode generates clean, idiomatic Fortran that matches handwritten `bind(C)` interfaces.
 
-We commit the pre-generated files (`./qiskit_c_api.f90`) so users don't need SWIG installed. The handwritten bindings in `../src/` remain the default; these generated bindings are an alternative for users who need full API coverage.
+**Type mapping:** Opaque pointers (QkCircuit*, QkDag*, etc.) map to `type(c_ptr)`. ISO C compatible structs (QkComplex64, QkCircuitInstruction, etc.) become native Fortran types with direct field access. Enums become integer parameters. All mappings follow ISO_C_BINDING standards.
 
-This approach lets us maintain a single source of truth (the C headers) while keeping the Fortran bindings readable and efficient. When the C API changes, we regenerate.
+This approach maintains a single source of truth (the C headers) while generating readable, efficient Fortran bindings. When the C API changes, we regenerate.
 
 ## Future Directions
 
-**Modularization**: Right now everything goes into `qiskit_c_api.f90`. We could split this into logical modules (`qiskit_c_api_circuit.f90`, `qiskit_c_api_dag.f90`, etc.) to match the handwritten structure. The routing logic in `generate_bindings.py` already partially supports this, update `_derive_module_name()`.
+**Modularization**: Currently everything goes into one Fortran module. We could split into logical modules (`qiskit_circuit`, `qiskit_dag`, etc.) using SWIG's `%module` directive with submodules.
 
-**Documentation pipeline**: We could auto-generate Fortran documentation from C header comments. The C API has docstrings; we're just not extracting them yet. A simple regex pass during generation would preserve that information.
+**Documentation pipeline**: SWIG can extract C header comments and generate Fortran documentation. We could explore enabling this with `%feature("docstring")` directives to preserve API documentation in the Fortran interfaces.
 
-**Type safety improvements**: The `TypeClassifier` in `interface_generator.py` uses heuristics (parameter names, companion parameters) to infer array vs. scalar types. We could parse C headers directly with `libclang` to get precise type information, though this would require reimplementing SWIG's C->Fortran type mapping.
+**Custom typemaps**: For advanced use cases, we could add custom SWIG typemaps to handle specific C patterns more idiomatically in Fortran. The current setup uses SWIG's default typemaps which work well for the Qiskit C API.
 
 **CI/CD integration**: Add a GitHub Action that regenerates bindings on C API changes and opens a PR if differences are detected. This would catch API drift early and keep the bindings in sync automatically.
 
@@ -69,15 +64,15 @@ This approach lets us maintain a single source of truth (the C headers) while ke
 
 When the Qiskit C API changes:
 
-1. Regenerate SWIG output: `swig -fortran -c++ qiskit.i`
-2. Run generator: `python generate_bindings.py`
-3. Commit updated `qiskit_c_api.f90`
+1. If new structs are added: Add `%fortran_struct(NewStruct);` to `qiskit_swigf.i`, then regenerate
+2. If struct definitions/function signatures change: Just regenerating using SWIG picks up changes automatically
 
-The Python scripts handle type inference and interface generation automatically. No manual editing of Fortran code required.
+The SWIG interface file handles type mapping and code generation automatically. No manual editing of Fortran code required.
 
 ## Resources
 
 - **SWIG-Fortran**: https://github.com/swig-fortran/swig
+- **SWIG Fortran User Manual**: https://www.osti.gov/biblio/1833959
 - **Qiskit C API**: https://qiskit.org/documentation/
 - **Fortran ISO C Binding**: https://gcc.gnu.org/onlinedocs/gfortran/ISO_005fC_005fBINDING.html
 

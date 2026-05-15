@@ -93,8 +93,8 @@ cmake -B build-swig \
       -DUSE_SWIG_BINDINGS=ON
 cmake --build build-swig
 
-# Test (same test suite works for both modes)
-cd build-swig && ./test_qiskit
+# Test with CMake
+cmake --build build-swig --target test
 ```
 
 To regenerate bindings (requires [SWIG-Fortran](https://github.com/swig-fortran/swig)):
