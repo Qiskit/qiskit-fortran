@@ -92,7 +92,6 @@ if(USE_SWIG_BINDINGS)
   # Compile the pre-generated C wrapper
   add_library(qiskit_swig_wrapper OBJECT "${SWIG_OUTPUT_C}")
   target_include_directories(qiskit_swig_wrapper PRIVATE "${QISKIT_INCLUDE_DIR}")
-  target_compile_definitions(qiskit_swig_wrapper PRIVATE QISKIT_C_PYTHON_INTERFACE=0)
   
   # Set the C API source files for SWIG build
   # Use ONLY the SWIG-generated qiskit_swigf.f90 which contains all types, enums and interfaces

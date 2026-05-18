@@ -40,39 +40,9 @@
 %fortran_unsigned(int32_t, uint32_t)
 %fortran_unsigned(int64_t, uint64_t)
 
-// ============================================================================
-// PREPROCESSOR CONFIGURATION
-// ============================================================================
-
-// Exclude Python-specific interface functions
-#define QISKIT_C_PYTHON_INTERFACE 0
-
-%{
-#define QISKIT_C_PYTHON_INTERFACE 0
-%}
-
-// ============================================================================
-// HEADER INCLUDES
-// ============================================================================
-
-%{
-// Define PyObject as an opaque struct to satisfy the compiler
-// We won't actually use these Python-specific functions
-typedef struct _object PyObject;
-
-#include "qiskit/complex.h"
-#include "qiskit/types.h"
-#include "qiskit/funcs.h"
-#include "qiskit/attributes.h"
-%}
-
 // Ignore helper functions (header-only, not part of C API)
 %ignore qk_complex64_to_native;
 %ignore qk_complex64_from_native;
-
-// Ignore all Python-specific functions (require PyObject which isn't available in pure C)
-%rename("$ignore", regextarget=1, fullname=1) ".*python.*";
-
 %include "qiskit/complex.h"
 %include "qiskit/attributes.h"
 
@@ -98,21 +68,8 @@ typedef struct _object PyObject;
 %fortran_struct(QkTranspileResult);
 
 // ============================================================================
-// TYPE DEFINITIONS AND FUNCTION DECLARATIONS
+// HEADER INCLUDES
 // ============================================================================
 
 %include "qiskit/types.h"
 %include "qiskit/funcs.h"
-
-// ============================================================================
-// FORTRAN TYPE CONFIGURATION
-// ============================================================================
-
-%fortranconst;
-
-%apply size_t { size_t };
-%apply uint32_t { uint32_t };
-%apply uint8_t { uint8_t };
-%apply int64_t { int64_t };
-%apply double { double };
-%apply bool { bool };

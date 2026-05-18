@@ -9,8 +9,6 @@ module qiskit_swigf
  private
 
  ! DECLARATION CONSTRUCTS
- integer(C_INT), protected, public, &
-   bind(C, name="_wrap_QISKIT_C_PYTHON_INTERFACE") :: QISKIT_C_PYTHON_INTERFACE
  ! struct QkComplex64
  type, bind(C), public :: QkComplex64
   real(C_DOUBLE), public :: re

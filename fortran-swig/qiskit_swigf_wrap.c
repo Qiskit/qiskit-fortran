@@ -206,18 +206,8 @@
 #include <stdint.h>
 
 
-#define QISKIT_C_PYTHON_INTERFACE 0
 
+#include "qiskit.h"
 
-// Define PyObject as an opaque struct to satisfy the compiler
-// We won't actually use these Python-specific functions
-typedef struct _object PyObject;
-
-#include "qiskit/complex.h"
-#include "qiskit/types.h"
-#include "qiskit/funcs.h"
-#include "qiskit/attributes.h"
-
-SWIGEXPORT SWIGEXTERN int const _wrap_QISKIT_C_PYTHON_INTERFACE = 0;
 
 
