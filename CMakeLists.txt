@@ -1,3 +1,15 @@
+# This code is part of Qiskit.
+#
+# (C) Copyright IBM 2026.
+#
+# This code is licensed under the Apache License, Version 2.0. You may
+# obtain a copy of this license in the LICENSE.txt file in the root directory
+# of this source tree or at https://www.apache.org/licenses/LICENSE-2.0.
+#
+# Any modifications or derivative works of this code must retain this
+# copyright notice, and modified files need to carry a notice indicating
+# that they have been altered from the originals.
+
 # =============================================================================
 # CMakeLists.txt  —  qiskit-fortran
 #
@@ -78,22 +90,18 @@ endif()
 #
 # Source order matters for Fortran — modules must be compiled before their
 # dependents. Dependency chain:
-#   qiskit_c_api_types -> qiskit_c_api_circuit, qiskit_utils
+#   qiskit_c_api_types, qiskit_c_api_circuit -> qiskit_utils, qiskit_circuit
 #   qiskit_circuit -> qiskit
 # ---------------------------------------------------------------------------
 add_library(qiskit-fortran STATIC
   src/qiskit_c_api_types.f90
   src/qiskit_c_api_circuit.f90
-  src/qiskit_c_api.f90
   src/qiskit_utils.f90
   src/qiskit_circuit.f90
   src/qiskit.f90)
 
-# Expose the Qiskit C header so that any downstream C/C++ code that also
-# includes qiskit.h finds it without extra -I flags.
 target_include_directories(qiskit-fortran
-  PUBLIC  "${QISKIT_INCLUDE_DIR}"
-  PRIVATE "${CMAKE_Fortran_MODULE_DIRECTORY}")
+  PRIVATE "${QISKIT_INCLUDE_DIR}")
 
 target_link_libraries(qiskit-fortran
   PUBLIC "${QISKIT_LIB}")

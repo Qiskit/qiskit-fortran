@@ -1,3 +1,15 @@
+! This code is part of Qiskit.
+!
+! (C) Copyright IBM 2026.
+!
+! This code is licensed under the Apache License, Version 2.0. You may
+! obtain a copy of this license in the LICENSE.txt file in the root directory
+! of this source tree or at https://www.apache.org/licenses/LICENSE-2.0.
+!
+! Any modifications or derivative works of this code must retain this
+! copyright notice, and modified files need to carry a notice indicating
+! that they have been altered from the originals.
+
 ! =============================================================================
 ! test_qiskit.f90  —  Test suite for the qiskit Fortran binding
 !
@@ -16,7 +28,7 @@
 
 program test_qiskit
   use qiskit
-  use qiskit_c_api, only : QkGate_H, QkGate_CX, qk_gate_num_qubits, qk_gate_num_params
+  use qiskit_c_api_circuit, only: QkGate_H, QkGate_CX, qk_gate_num_qubits, qk_gate_num_params
   use qiskit_c_api_circuit  ! Import all gate constants for verification
   use, intrinsic :: iso_c_binding, only : c_double, c_int32_t, c_int, c_size_t
   implicit none (type, external)
