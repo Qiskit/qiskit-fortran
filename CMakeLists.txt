@@ -1,5 +1,5 @@
 # =============================================================================
-# CMakeLists.txt  —  qiskit-f90
+# CMakeLists.txt  —  qiskit-fortran
 #
 # Builds two targets:
 #   qiskit_fortran  — static library containing both modules
@@ -13,7 +13,7 @@
 
 cmake_minimum_required(VERSION 3.20)
 
-project(qiskit-f90
+project(qiskit-fortran
   VERSION     0.0.0
   DESCRIPTION "Fortran ISO_C_BINDING interface to the Qiskit C API"
   LANGUAGES   Fortran)
@@ -21,7 +21,7 @@ project(qiskit-f90
 # ---------------------------------------------------------------------------
 # Options
 # ---------------------------------------------------------------------------
-option(QISKIT_F90_TESTS "Build and register the test suite" ON)
+option(QISKIT_FORTRAN_TESTS "Build and register the test suite" ON)
 
 # ---------------------------------------------------------------------------
 # Locate the Qiskit C extension
@@ -81,7 +81,7 @@ endif()
 #   qiskit_c_api_types -> qiskit_c_api_circuit, qiskit_utils
 #   qiskit_circuit -> qiskit
 # ---------------------------------------------------------------------------
-add_library(qiskit-f90 STATIC
+add_library(qiskit-fortran STATIC
   src/qiskit_c_api_types.f90
   src/qiskit_c_api_circuit.f90
   src/qiskit_c_api.f90
@@ -91,27 +91,27 @@ add_library(qiskit-f90 STATIC
 
 # Expose the Qiskit C header so that any downstream C/C++ code that also
 # includes qiskit.h finds it without extra -I flags.
-target_include_directories(qiskit-f90
+target_include_directories(qiskit-fortran
   PUBLIC  "${QISKIT_INCLUDE_DIR}"
   PRIVATE "${CMAKE_Fortran_MODULE_DIRECTORY}")
 
-target_link_libraries(qiskit-f90
+target_link_libraries(qiskit-fortran
   PUBLIC "${QISKIT_LIB}")
 
 # Place generated .mod files in a dedicated directory so downstream
 # projects can find them with a single -I flag.
-set_target_properties(qiskit-f90 PROPERTIES
+set_target_properties(qiskit-fortran PROPERTIES
   Fortran_MODULE_DIRECTORY "${CMAKE_BINARY_DIR}/modules")
 
 # ---------------------------------------------------------------------------
 # Test executable
 # ---------------------------------------------------------------------------
-if(QISKIT_F90_TESTS)
+if(QISKIT_FORTRAN_TESTS)
   add_executable(test_qiskit test/test_qiskit.f90)
 
-  target_link_libraries(test_qiskit PRIVATE qiskit-f90)
+  target_link_libraries(test_qiskit PRIVATE qiskit-fortran)
   target_include_directories(test_qiskit PRIVATE "${CMAKE_BINARY_DIR}/modules")
-  add_dependencies(test_qiskit qiskit-f90)
+  add_dependencies(test_qiskit qiskit-fortran)
 
   # Extract the directory containing libqiskit for RPATH
   get_filename_component(QISKIT_LIB_DIR "${QISKIT_LIB}" DIRECTORY)
@@ -162,9 +162,9 @@ endif()
 # ---------------------------------------------------------------------------
 include(GNUInstallDirs)
 
-install(TARGETS qiskit-f90
+install(TARGETS qiskit-fortran
   ARCHIVE DESTINATION "${CMAKE_INSTALL_LIBDIR}")
 
 install(DIRECTORY "${CMAKE_BINARY_DIR}/modules/"
-  DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}/qiskit-f90"
+  DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}/qiskit-fortran"
   FILES_MATCHING PATTERN "*.mod")

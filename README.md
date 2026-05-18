@@ -1,4 +1,4 @@
-# qiskit-f90
+# qiskit-fortran
 
 Fortran ISO_C_BINDING interface to the [Qiskit C API](https://docs.quantum.ibm.com/api/qiskit-c).
 
@@ -47,11 +47,11 @@ qiskit/dist/c/
 
 ---
 
-## Step 2 — Configure and build qiskit-f90
+## Step 2 — Configure and build qiskit-fortran
 
 ```bash
 git clone <this-repo>
-cd qiskit-f90
+cd qiskit-fortran
 
 cmake -B build \
       -DQISKIT_ROOT=/absolute/path/to/qiskit \
@@ -139,18 +139,18 @@ path:
 ### CMake (recommended)
 
 ```cmake
-find_package(qiskit-f90 REQUIRED
-  HINTS /path/to/qiskit-f90/build)
+find_package(qiskit-fortran REQUIRED
+  HINTS /path/to/qiskit-fortran/build)
 
 add_executable(my_hpc_code main.f90)
-target_link_libraries(my_hpc_code PRIVATE qiskit-f90::qiskit-f90)
+target_link_libraries(my_hpc_code PRIVATE qiskit-fortran::qiskit-fortran)
 ```
 
 ### Manual compilation (gfortran)
 
 ```bash
 QISKIT_ROOT=/path/to/qiskit
-BUILD=/path/to/qiskit-f90/build
+BUILD=/path/to/qiskit-fortran/build
 
 gfortran -std=f2018 -O3 \
   -I${BUILD}/modules \
@@ -207,7 +207,7 @@ doxygen -g Doxyfile
 
 Edit `Doxyfile` to set:
 ```
-PROJECT_NAME           = "qiskit-f90"
+PROJECT_NAME           = "qiskit-fortran"
 INPUT                  = src/
 RECURSIVE              = YES
 OPTIMIZE_FOR_FORTRAN   = YES
