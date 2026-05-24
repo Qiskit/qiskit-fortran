@@ -47,6 +47,7 @@ CTestTestfile.cmake
 *~
 *.bak
 *.swp
+*.git
 
 # Doxygen documentation output
 html/
