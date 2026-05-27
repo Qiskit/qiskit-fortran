@@ -2,8 +2,7 @@
 
 `qiskit-fortran` exposes Qiskit's circuit construction and transpilation layer
 as a native Fortran interface. This document outlines the research domains
-where that capability has a well-motivated landing zone, grounded in active
-literature and existing Fortran codebases.
+where that capability has a well-motivated landing zone.
 
 Circuit execution is not yet natively supported from Fortran — tracked in [#12](https://github.com/Qiskit/qiskit-fortran/issues/12).
 
@@ -69,8 +68,7 @@ existing workflow rather than requiring a separate stack.
 Fortran QMC codes: [CASINO](https://vallico.net/casinoqmc/),
 [QMCPACK](https://qmcpack.org/), [TurboRVB](https://turborvb.sissa.it/), use
 trial wavefunctions to guide Monte Carlo sampling. There is conceptual interest
-in using quantum hardware to prepare trial wavefunctions richer than classical
-ansätze can efficiently express, with the resulting bitstring samples feeding
+in using quantum hardware to prepare trial wavefunctions, with the resulting bitstring samples feeding
 back into the QMC walker distribution. The physics of integrating
 quantum-sampled trial states into QMC is an open research question, but the
 domain is Fortran-native and the application is coherent with the binding
