@@ -15,7 +15,7 @@ qiskit.f90 -> qiskit_circuit.f90 -> qiskit_c_api_circuit.f90 -> libqiskit (C/Rus
 | Requirement | Minimum version | Notes |
 |---|---|---|
 | Platform | macOS 13+ | Tested; Linux (glibc) should work but untested; Windows not supported |
-| Fortran compiler | gfortran 11+ or flang 22+ | Tested and verified: gfortran 11-15, flang/flang-new 22.1.4 on macOS arm64; Needs Fortran 2018 (`FINAL`, `ERROR STOP` with message, `C_LOC`) |
+| Fortran compiler | gfortran 11+ or flang 22+ | Tested and verified: gfortran 11-15, flang 22.1.4 on macOS arm64; Needs Fortran 2018 (`FINAL`, `ERROR STOP` with message, `C_LOC`) |
 | CMake | 3.20 | |
 | Qiskit (Python) | 2.2 | Must be installed so the cext build works |
 | Rust toolchain | stable | Needed only to build the C extension |
@@ -64,7 +64,7 @@ The build system includes several intelligent features:
 
 - **RPATH configuration**: embeds runtime library search paths directly into the test binary so no environment variables are needed at runtime
 - **Automatic Python detection**: locates the active conda environment or system Python to resolve the `libpython` transitive dependency of `libqiskit`
-- **Multi-compiler support**: Tested and validated on macOS arm64 with gfortran 11-15 and LLVM flang/flang-new 22.1.4
+- **Multi-compiler support**: Tested and validated on macOS arm64 with gfortran 11-15 and LLVM flang 22.1.4
 
 ### Build Variants
 
