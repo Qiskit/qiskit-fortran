@@ -62,10 +62,19 @@ module qiskit_circuit
     procedure, public :: reset       => qc_reset
     procedure, public :: barrier     => qc_barrier
     procedure, public :: barrier_all => qc_barrier_all
+    procedure, public :: c_handle    => qc_c_handle
     final :: qc_destroy
   end type QuantumCircuit
 
 contains
+
+  ! Raw QkCircuit* handle, so qiskit_runtime can submit it. Circuit keeps
+  ! ownership; do not free the returned pointer.
+  function qc_c_handle(self) result(ptr)
+    class(QuantumCircuit), intent(in) :: self
+    type(c_ptr) :: ptr
+    ptr = self%ptr
+  end function qc_c_handle
 
   ! Internal gate dispatch - converts Fortran arrays to C ABI
   subroutine dispatch_gate(ptr, gate_id, qubits, params)
