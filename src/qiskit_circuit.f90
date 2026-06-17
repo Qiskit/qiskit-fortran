@@ -15,21 +15,23 @@
 !> Provides the QuantumCircuit type for building and manipulating quantum circuits.
 module qiskit_circuit
   use, intrinsic :: iso_c_binding, only : &
-      c_ptr, c_null_ptr, c_associated, c_loc, c_int, c_double, c_size_t
-  
+      c_ptr, c_null_ptr, c_associated, c_loc, c_int, c_double, c_size_t, c_int32_t
+
 #ifdef USE_SWIG_BINDINGS
-  ! use SWIG-generated module
   use qiskit_swigf
+  use qiskit_utils, only : check_rc, to_qubit
 #else
-  ! Handwritten mode: use separate modules
   use qiskit_c_api_types,   only : QK_QUBIT_KIND
   use qiskit_c_api_circuit
-#endif
-  
   use qiskit_utils,         only : check_rc, to_qubit, QK_QUBIT_KIND
+#endif
 
   implicit none (type, external)
   private
+
+#ifdef USE_SWIG_BINDINGS
+  integer, parameter :: QK_QUBIT_KIND = c_int32_t
+#endif
 
   public :: QuantumCircuit
 

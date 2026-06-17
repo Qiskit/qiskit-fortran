@@ -33,7 +33,7 @@ project(qiskit-fortran
 # ---------------------------------------------------------------------------
 # Options
 # ---------------------------------------------------------------------------
-option(QISKIT_F90_TESTS "Build and register the test suite" ON)
+option(QISKIT_FORTRAN_TESTS "Build and register the test suite" ON)
 option(USE_SWIG_BINDINGS "Use SWIG-generated bindings instead of manual bindings" OFF)
 
 # ---------------------------------------------------------------------------
@@ -99,9 +99,11 @@ if(USE_SWIG_BINDINGS)
   set(QISKIT_EXTRA_OBJECTS $<TARGET_OBJECTS:qiskit_swig_wrapper>)
 else()
   message(STATUS "Using hand-written bindings")
-  
-  # Glob all manual C API binding files
-  file(GLOB QISKIT_C_API_SOURCES "src/*c_api*.f90")
+
+  # Explicit list — do not use GLOB (CMake won't re-run configure if a new file is added)
+  set(QISKIT_C_API_SOURCES
+    src/qiskit_c_api_types.f90
+    src/qiskit_c_api_circuit.f90)
   set(QISKIT_EXTRA_OBJECTS "")
 endif()
 
@@ -116,10 +118,23 @@ if(USE_SWIG_BINDINGS)
   add_compile_options($<$<COMPILE_LANGUAGE:Fortran>:-DUSE_SWIG_BINDINGS>)
 endif()
 
-# Generic flags that work across most Fortran compilers
+# Flags common to all supported compilers
 add_compile_options(
   $<$<COMPILE_LANGUAGE:Fortran>:-g>
   $<$<AND:$<COMPILE_LANGUAGE:Fortran>,$<CONFIG:Release>>:-O2>)
+
+if(CMAKE_Fortran_COMPILER_ID MATCHES "GNU")
+  add_compile_options(
+    $<$<COMPILE_LANGUAGE:Fortran>:-Wall>
+    $<$<COMPILE_LANGUAGE:Fortran>:-Wextra>
+    $<$<COMPILE_LANGUAGE:Fortran>:-Wconversion>
+    $<$<COMPILE_LANGUAGE:Fortran>:-fcheck=all>
+    $<$<COMPILE_LANGUAGE:Fortran>:-fbacktrace>
+    $<$<AND:$<COMPILE_LANGUAGE:Fortran>,$<CONFIG:Debug>>:-ffpe-trap=invalid,zero,overflow>)
+elseif(CMAKE_Fortran_COMPILER_ID MATCHES "LLVMFlang")
+  add_compile_options(
+    $<$<COMPILE_LANGUAGE:Fortran>:-Wall>)
+endif()
 
 # ---------------------------------------------------------------------------
 # Library: qiskit_fortran
@@ -130,28 +145,29 @@ add_compile_options(
 #   - SWIG:   qiskit_swig_api -> qiskit_utils, qiskit_circuit
 #   - Both:   qiskit_circuit -> qiskit
 # ---------------------------------------------------------------------------
-add_library(qiskit-f90 STATIC
+add_library(qiskit-fortran STATIC
   ${QISKIT_C_API_SOURCES}
   src/qiskit_utils.f90
   src/qiskit_circuit.f90
   src/qiskit.f90
   ${QISKIT_EXTRA_OBJECTS})
 
+# Must be set before any source in this target is compiled so the Fortran
+# scanner resolves intra-target USE statements (e.g. qiskit_utils -> qiskit_swigf).
+set_target_properties(qiskit-fortran PROPERTIES
+  Fortran_MODULE_DIRECTORY "${CMAKE_BINARY_DIR}/modules")
+
 target_include_directories(qiskit-fortran
-  PRIVATE "${QISKIT_INCLUDE_DIR}")
+  PRIVATE "${QISKIT_INCLUDE_DIR}"
+  PRIVATE "${CMAKE_BINARY_DIR}/modules")
 
 target_link_libraries(qiskit-fortran
   PUBLIC "${QISKIT_LIB}")
 
 # Add dependency on SWIG wrapper if using SWIG bindings
 if(USE_SWIG_BINDINGS)
-  add_dependencies(qiskit-f90 qiskit_swig_wrapper)
+  add_dependencies(qiskit-fortran qiskit_swig_wrapper)
 endif()
-
-# Place generated .mod files in a dedicated directory so downstream
-# projects can find them with a single -I flag.
-set_target_properties(qiskit-fortran PROPERTIES
-  Fortran_MODULE_DIRECTORY "${CMAKE_BINARY_DIR}/modules")
 
 # ---------------------------------------------------------------------------
 # Test executable
