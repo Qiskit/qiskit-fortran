@@ -95,14 +95,9 @@ cmake --build build-swig
 cmake --build build-swig --target test
 ```
 
-To regenerate bindings (requires [SWIG-Fortran](https://github.com/swig-fortran/swig)):
-```bash
-cd fortran-swig
-swig -fortran -c++ qiskit.i
-python generate_bindings.py
-```
+To regenerate bindings (requires [SWIG-Fortran](https://github.com/swig-fortran/swig))
 
-The high-level API (`QuantumCircuit` type, etc.) works identically with both backends.
+The high-level API works identically with both backends.
 
 ---
 
