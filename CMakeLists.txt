@@ -131,9 +131,6 @@ if(CMAKE_Fortran_COMPILER_ID MATCHES "GNU")
     $<$<COMPILE_LANGUAGE:Fortran>:-fcheck=all>
     $<$<COMPILE_LANGUAGE:Fortran>:-fbacktrace>
     $<$<AND:$<COMPILE_LANGUAGE:Fortran>,$<CONFIG:Debug>>:-ffpe-trap=invalid,zero,overflow>)
-elseif(CMAKE_Fortran_COMPILER_ID MATCHES "LLVMFlang")
-  add_compile_options(
-    $<$<COMPILE_LANGUAGE:Fortran>:-Wall>)
 endif()
 
 # ---------------------------------------------------------------------------
