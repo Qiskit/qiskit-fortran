@@ -205,6 +205,17 @@ if(USE_SWIG_BINDINGS)
     $<TARGET_OBJECTS:qk_layer3>
     $<TARGET_OBJECTS:qk_layer4>
     $<TARGET_OBJECTS:qk_layer5>)
+
+  # Add runtime layers if runtime is enabled
+  if(QISKIT_FORTRAN_RUNTIME)
+    fortran_layer(qk_layer_rt_api src/qiskit_c_api_runtime.f90)
+    fortran_layer(qk_layer_rt src/qiskit_runtime.f90)
+    add_dependencies(qk_layer_rt_api qk_layer0)
+    add_dependencies(qk_layer_rt qk_layer_rt_api qk_layer2)
+    list(APPEND QISKIT_EXTRA_OBJECTS
+      $<TARGET_OBJECTS:qk_layer_rt_api>
+      $<TARGET_OBJECTS:qk_layer_rt>)
+  endif()
 endif()
 
 # Library: qiskit-fortran
