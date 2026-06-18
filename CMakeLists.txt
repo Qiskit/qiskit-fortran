@@ -35,6 +35,10 @@ project(qiskit-fortran
 # ---------------------------------------------------------------------------
 option(QISKIT_FORTRAN_TESTS "Build and register the test suite" ON)
 option(USE_SWIG_BINDINGS "Use SWIG-generated bindings instead of manual bindings" OFF)
+option(QISKIT_FORTRAN_RUNTIME "Build the IBM Runtime binding (needs libqiskit_ibm_runtime)" OFF)
+
+set(QISKIT_RUNTIME_ROOT "" CACHE PATH
+  "Root of qiskit-ibm-runtime-c (needed when QISKIT_FORTRAN_RUNTIME is ON)")
 
 # ---------------------------------------------------------------------------
 # Locate the Qiskit C extension
@@ -63,6 +67,16 @@ find_path(QISKIT_INCLUDE_DIR
 
 message(STATUS "Qiskit library : ${QISKIT_LIB}")
 message(STATUS "Qiskit include : ${QISKIT_INCLUDE_DIR}")
+
+# Locate the IBM Runtime client (optional)
+if(QISKIT_FORTRAN_RUNTIME)
+  find_library(QISKIT_RUNTIME_LIB
+    NAMES qiskit_ibm_runtime
+    HINTS "${QISKIT_RUNTIME_ROOT}/build"
+          "${QISKIT_RUNTIME_ROOT}/target/release"
+    REQUIRED)
+  message(STATUS "Runtime library: ${QISKIT_RUNTIME_LIB}")
+endif()
 
 # ---------------------------------------------------------------------------
 # SWIG Configuration (if enabled)
@@ -193,7 +207,6 @@ if(USE_SWIG_BINDINGS)
     $<TARGET_OBJECTS:qk_layer5>)
 endif()
 
-# ---------------------------------------------------------------------------
 # Library: qiskit-fortran
 # ---------------------------------------------------------------------------
 if(USE_SWIG_BINDINGS)
@@ -201,16 +214,20 @@ if(USE_SWIG_BINDINGS)
   add_library(qiskit-fortran STATIC ${QISKIT_EXTRA_OBJECTS})
   add_dependencies(qiskit-fortran qk_layer5 qiskit_swig_wrapper)
 else()
-  add_library(qiskit-fortran STATIC
+  set(QISKIT_FORTRAN_SOURCES
     ${QISKIT_C_API_SOURCES}
     src/qiskit_utils.f90
     src/qiskit_circuit.f90
-    src/qiskit.f90
-    ${QISKIT_EXTRA_OBJECTS})
-endif()
+    src/qiskit.f90)
 
-set_target_properties(qiskit-fortran PROPERTIES
-  Fortran_MODULE_DIRECTORY "${CMAKE_BINARY_DIR}/modules")
+  if(QISKIT_FORTRAN_RUNTIME)
+    list(APPEND QISKIT_FORTRAN_SOURCES
+      src/qiskit_c_api_runtime.f90
+      src/qiskit_runtime.f90)
+  endif()
+
+  add_library(qiskit-fortran STATIC ${QISKIT_FORTRAN_SOURCES})
+endif()
 
 target_include_directories(qiskit-fortran
   PRIVATE "${QISKIT_INCLUDE_DIR}"
@@ -218,6 +235,15 @@ target_include_directories(qiskit-fortran
 
 target_link_libraries(qiskit-fortran
   PUBLIC "${QISKIT_LIB}")
+
+if(QISKIT_FORTRAN_RUNTIME)
+  target_link_libraries(qiskit-fortran PUBLIC "${QISKIT_RUNTIME_LIB}")
+endif()
+
+# Place generated .mod files in a dedicated directory so downstream
+# projects can find them with a single -I flag.
+set_target_properties(qiskit-fortran PROPERTIES
+  Fortran_MODULE_DIRECTORY "${CMAKE_BINARY_DIR}/modules")
 
 # ---------------------------------------------------------------------------
 # Test executable
@@ -270,7 +296,36 @@ if(QISKIT_FORTRAN_TESTS)
     COMMENT "Running test_qiskit"
     VERBATIM)
 
-  add_custom_target(test DEPENDS run_test)
+  set(RUN_TARGETS run_test)
+
+  # Runtime binding test (hardware-free, but links libqiskit_ibm_runtime)
+  if(QISKIT_FORTRAN_RUNTIME)
+    add_executable(test_runtime test/test_runtime.f90)
+    target_link_libraries(test_runtime PRIVATE qiskit-fortran)
+    target_include_directories(test_runtime PRIVATE "${CMAKE_BINARY_DIR}/modules")
+    add_dependencies(test_runtime qiskit-fortran)
+
+    get_filename_component(QISKIT_RUNTIME_LIB_DIR "${QISKIT_RUNTIME_LIB}" DIRECTORY)
+    if(PYTHON_LIB_DIR)
+      set(RUNTIME_RPATH "${QISKIT_LIB_DIR};${QISKIT_RUNTIME_LIB_DIR};${PYTHON_LIB_DIR}")
+    else()
+      set(RUNTIME_RPATH "${QISKIT_LIB_DIR};${QISKIT_RUNTIME_LIB_DIR}")
+    endif()
+    set_target_properties(test_runtime PROPERTIES
+      BUILD_RPATH   "${RUNTIME_RPATH}"
+      INSTALL_RPATH "${RUNTIME_RPATH}"
+      BUILD_WITH_INSTALL_RPATH OFF)
+
+    add_custom_target(run_test_runtime
+      COMMAND $<TARGET_FILE:test_runtime>
+      DEPENDS test_runtime
+      WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+      COMMENT "Running test_runtime"
+      VERBATIM)
+    list(APPEND RUN_TARGETS run_test_runtime)
+  endif()
+
+  add_custom_target(test DEPENDS ${RUN_TARGETS})
 endif()
 
 # ---------------------------------------------------------------------------
