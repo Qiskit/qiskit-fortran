@@ -72,8 +72,8 @@ message(STATUS "Qiskit include : ${QISKIT_INCLUDE_DIR}")
 if(QISKIT_FORTRAN_RUNTIME)
   find_library(QISKIT_RUNTIME_LIB
     NAMES qiskit_ibm_runtime
-    HINTS "${QISKIT_RUNTIME_ROOT}/build"
-          "${QISKIT_RUNTIME_ROOT}/target/release"
+    HINTS "${QISKIT_RUNTIME_ROOT}/build/cargo/release"
+          "${QISKIT_RUNTIME_ROOT}/build/cargo/debug"
     REQUIRED)
   message(STATUS "Runtime library: ${QISKIT_RUNTIME_LIB}")
 endif()
