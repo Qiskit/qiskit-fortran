@@ -214,7 +214,7 @@ doxygen
 
 Output is in `docs/html/index.html`. The high-level API is documented with Fortran-specific usage patterns. The FFI layer (`qiskit_c_api*.f90`) defers to the [Qiskit C API reference](https://docs.quantum.ibm.com/api/qiskit-c).
 
-## IBM Runtime (experimental)
+## IBM Runtime
 
 Optional binding to [qiskit-ibm-runtime-c](https://github.com/Qiskit/qiskit-ibm-runtime-c)
 for running circuits on IBM Quantum. `qiskit_runtime` adds `RtService`,
@@ -222,6 +222,17 @@ for running circuits on IBM Quantum. `qiskit_runtime` adds `RtService`,
 
 Off by default (it needs `libqiskit_ibm_runtime`):
 
+### Build qiskit-ibm-runtime-c
+```bash
+gh repo clone Qiskit/qiskit-ibm-runtime-c
+cd qiskit-ibm-runtime-c
+mkdir build && cd build
+cmake ..
+make
+```
+This produces `build/cargo/debug/libqiskit_ibm_runtime.dylib` (macOS) or `.so` (Linux).
+
+### Build qiskit-fortran with runtime enabled
 ```bash
 cmake -B build -DQISKIT_ROOT=/path/to/qiskit \
       -DQISKIT_FORTRAN_RUNTIME=ON \
@@ -230,7 +241,6 @@ cmake -B build -DQISKIT_ROOT=/path/to/qiskit \
 
 `test/test_runtime.f90` covers the parts that don't need hardware;
 `applications/runtime_bell` is a full submit-and-read-back run (needs credentials).
-Transpilation isn't bound yet, so circuits go to the backend as built.
 
 ## License
 
