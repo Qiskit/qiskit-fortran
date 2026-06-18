@@ -21,9 +21,8 @@ module qiskit_circuit
   use qiskit_swigf
   use qiskit_utils, only : check_rc, to_qubit
 #else
-  use qiskit_c_api_types,   only : QK_QUBIT_KIND
   use qiskit_c_api_circuit
-  use qiskit_utils,         only : check_rc, to_qubit, QK_QUBIT_KIND
+  use qiskit_utils, only : check_rc, to_qubit, QK_QUBIT_KIND
 #endif
 
   implicit none (type, external)
@@ -72,10 +71,26 @@ module qiskit_circuit
     procedure, public :: reset       => qc_reset
     procedure, public :: barrier     => qc_barrier
     procedure, public :: barrier_all => qc_barrier_all
+    procedure, public :: c_handle    => qc_c_handle
+    ! Internal methods for interop with transpiler
+    procedure, public :: get_c_ptr   => qc_get_c_ptr
+    procedure, public :: from_ptr    => qc_from_ptr
+    ! Move-assignment: transfers ownership so the source ptr is nulled,
+    ! preventing double-free when a function result temporary is finalized.
+    procedure, private :: qc_assign
+    generic, public :: assignment(=) => qc_assign
     final :: qc_destroy
   end type QuantumCircuit
 
 contains
+
+  ! Raw QkCircuit* handle, so qiskit_runtime can submit it. Circuit keeps
+  ! ownership; do not free the returned pointer.
+  function qc_c_handle(self) result(ptr)
+    class(QuantumCircuit), intent(in) :: self
+    type(c_ptr) :: ptr
+    ptr = self%ptr
+  end function qc_c_handle
 
   ! Internal gate dispatch - converts Fortran arrays to C ABI
   subroutine dispatch_gate(ptr, gate_id, qubits, params)
@@ -501,5 +516,48 @@ contains
 #endif
     call check_rc(rc, "barrier_all")
   end subroutine qc_barrier_all
+
+  !> @brief Get C pointer for interop (INTERNAL USE ONLY)
+  !> @return C pointer to circuit
+  !> @note This is an internal method for transpiler interop; not part of public API
+  function qc_get_c_ptr(self) result(ptr)
+    class(QuantumCircuit), intent(in) :: self
+    type(c_ptr) :: ptr
+    ptr = self%ptr
+  end function qc_get_c_ptr
+
+  !> @brief Initialize circuit from existing C pointer (INTERNAL USE ONLY)
+  !> @param ptr C pointer to circuit
+  !> @note Takes ownership of the pointer; do not free it externally
+  !> @note This is an internal method for transpiler interop; not part of public API
+  subroutine qc_from_ptr(self, ptr)
+    class(QuantumCircuit), intent(inout) :: self
+    type(c_ptr), intent(in) :: ptr
+
+    if (c_associated(self%ptr)) then
+      call qk_circuit_free(self%ptr)
+    end if
+
+    self%ptr = ptr
+  end subroutine qc_from_ptr
+
+  !> @brief Copy-assignment: deep-copy the underlying circuit so each variable
+  !>        owns an independent allocation and the finalizer never double-frees.
+  !> @note Required because the default Fortran assignment just copies the raw
+  !>       c_ptr, leaving two QuantumCircuit objects pointing at the same
+  !>       C heap block.  When both are finalized (e.g. the function-result
+  !>       temporary AND the caller's variable), qk_circuit_free is called twice
+  !>       on the same address, causing a double-free abort.
+  subroutine qc_assign(lhs, rhs)
+    class(QuantumCircuit), intent(inout) :: lhs
+    type(QuantumCircuit),  intent(in)    :: rhs
+
+    if (c_associated(lhs%ptr)) call qk_circuit_free(lhs%ptr)
+    if (c_associated(rhs%ptr)) then
+      lhs%ptr = qk_circuit_copy(rhs%ptr)
+    else
+      lhs%ptr = c_null_ptr
+    end if
+  end subroutine qc_assign
 
 end module qiskit_circuit

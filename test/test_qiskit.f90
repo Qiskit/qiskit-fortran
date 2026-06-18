@@ -69,6 +69,18 @@ program test_qiskit
   call test_measure_all_clbit_boundary()
   call test_uninitialised_circuit_guards()
 
+#ifdef USE_SWIG_BINDINGS
+  ! target and transpiler tests (SWIG interface only)
+  call test_target_construction()
+  call test_target_properties()
+  call test_target_entry_gate()
+  call test_target_entry_measure_reset()
+  call test_target_add_instructions()
+  call test_transpile_with_target()
+  call test_transpile_optimization_levels()
+  call test_transpile_optimization_cancellation()
+#endif
+
   ! summary
   write(*, '(/, a)') "========================================"
   write(*, '(a, i0)') "  PASS : ", n_pass
@@ -520,5 +532,224 @@ contains
     call assert_eq_int_size_t(qc%num_instructions(), 1, &
         "initialised circuit: gate dispatch works")
   end subroutine test_uninitialised_circuit_guards
+#ifdef USE_SWIG_BINDINGS
+  subroutine create_test_backend(backend, num_qubits)
+    type(Target), intent(inout) :: backend
+    integer, intent(in), optional :: num_qubits
+    type(InstructionProperties) :: entry
+    integer :: qubits_1(1), qubits_2(2), i, nq
+
+    nq = 5
+    if (present(num_qubits)) nq = num_qubits
+
+    call backend%init(num_qubits=nq)
+    call backend%set_dt(1.0e-9_c_double)
+
+    call entry%init_gate(QkGate_RZ)
+    call entry%set_name("rz")
+    do i = 0, nq - 1
+      qubits_1 = [i]
+      call entry%add_property(qubits_1, duration=0.0_c_double, error=0.0_c_double)
+    end do
+    call backend%add_instruction(entry)
+
+    call entry%init_gate(QkGate_SX)
+    call entry%set_name("sx")
+    do i = 0, nq - 1
+      qubits_1 = [i]
+      call entry%add_property(qubits_1, duration=35.5e-9_c_double, error=0.0004_c_double)
+    end do
+    call backend%add_instruction(entry)
+
+    call entry%init_gate(QkGate_X)
+    call entry%set_name("x")
+    do i = 0, nq - 1
+      qubits_1 = [i]
+      call entry%add_property(qubits_1, duration=35.5e-9_c_double, error=0.0004_c_double)
+    end do
+    call backend%add_instruction(entry)
+
+    call entry%init_gate(QkGate_CX)
+    call entry%set_name("cx")
+    do i = 0, nq - 2
+      qubits_2 = [i, i + 1]
+      call entry%add_property(qubits_2, duration=270.0e-9_c_double, error=0.007_c_double)
+    end do
+    call backend%add_instruction(entry)
+
+    call entry%init_measure()
+    call entry%set_name("measure")
+    do i = 0, nq - 1
+      qubits_1 = [i]
+      call entry%add_property(qubits_1, duration=5.8e-6_c_double, error=0.075_c_double)
+    end do
+    call backend%add_instruction(entry)
+  end subroutine create_test_backend
+
+
+  !> Test Target construction and basic properties.
+  subroutine test_target_construction()
+    type(Target) :: backend
+    call section("Target construction")
+
+    call backend%init(num_qubits=3)
+    call assert_eq_int(backend%num_qubits(), 3, "Target has 3 qubits")
+    call assert_eq_int_size_t(backend%num_instructions(), 0, "New target has 0 instructions")
+  end subroutine test_target_construction
+
+  subroutine test_target_properties()
+    type(Target) :: backend
+    real(c_double) :: dt_val
+    integer :: gran, min_len, pulse_align, acq_align
+    call section("Target properties (dt, granularity, alignment)")
+
+    call backend%init(num_qubits=2)
+
+    call backend%set_dt(1.0e-9_c_double)
+    dt_val = backend%dt()
+    call assert_true(abs(dt_val - 1.0e-9_c_double) < 1.0e-15_c_double, "dt set to 1ns")
+
+    call backend%set_granularity(16)
+    gran = backend%granularity()
+    call assert_eq_int(gran, 16, "granularity set to 16")
+
+    call backend%set_min_length(64)
+    min_len = backend%min_length()
+    call assert_eq_int(min_len, 64, "min_length set to 64")
+
+    call backend%set_pulse_alignment(8)
+    pulse_align = backend%pulse_alignment()
+    call assert_eq_int(pulse_align, 8, "pulse_alignment set to 8")
+
+    call backend%set_acquire_alignment(16)
+    acq_align = backend%acquire_alignment()
+    call assert_eq_int(acq_align, 16, "acquire_alignment set to 16")
+  end subroutine test_target_properties
+
+  subroutine test_target_entry_gate()
+    type(InstructionProperties) :: entry
+    integer :: qubits(1)
+    call section("InstructionProperties for gate")
+
+    call entry%init_gate(QkGate_H)
+    call entry%set_name("h")
+    qubits = [0]
+    call entry%add_property(qubits, duration=35.5e-9_c_double, error=0.001_c_double)
+    call assert_true(.true., "Gate entry created successfully")
+  end subroutine test_target_entry_gate
+
+  subroutine test_target_entry_measure_reset()
+    type(InstructionProperties) :: measure_entry, reset_entry
+    integer :: qubits(1)
+    call section("InstructionProperties for measure and reset")
+
+    call measure_entry%init_measure()
+    call measure_entry%set_name("measure")
+    qubits = [0]
+    call measure_entry%add_property(qubits, duration=1000.0e-9_c_double, error=0.01_c_double)
+    call assert_true(.true., "Measure entry created successfully")
+
+    call reset_entry%init_reset()
+    call reset_entry%set_name("reset")
+    qubits = [1]
+    call reset_entry%add_property(qubits, duration=500.0e-9_c_double, error=0.005_c_double)
+    call assert_true(.true., "Reset entry created successfully")
+  end subroutine test_target_entry_measure_reset
+
+  subroutine test_target_add_instructions()
+    type(Target) :: backend
+    type(InstructionProperties) :: h_entry, cx_entry
+    integer :: qubits_1(1), qubits_2(2)
+    call section("Target add_instruction")
+
+    call backend%init(num_qubits=2)
+
+    call h_entry%init_gate(QkGate_H)
+    call h_entry%set_name("h")
+    qubits_1 = [0]
+    call h_entry%add_property(qubits_1, duration=35.5e-9_c_double, error=0.001_c_double)
+    call backend%add_instruction(h_entry)
+    call assert_eq_int_size_t(backend%num_instructions(), 1, "Target has 1 instruction after H")
+
+    call cx_entry%init_gate(QkGate_CX)
+    call cx_entry%set_name("cx")
+    qubits_2 = [0, 1]
+    call cx_entry%add_property(qubits_2, duration=200.0e-9_c_double, error=0.01_c_double)
+    call backend%add_instruction(cx_entry)
+    call assert_eq_int_size_t(backend%num_instructions(), 2, "Target has 2 instructions after CX")
+  end subroutine test_target_add_instructions
+
+  subroutine test_transpile_with_target()
+    type(Target) :: backend
+    type(QuantumCircuit) :: qc, transpiled_qc
+    integer :: nq, nc
+    integer(c_size_t) :: ninstr
+    call section("Transpilation with target")
+
+    call create_test_backend(backend, num_qubits=2)
+    call qc%init(num_qubits=2, num_clbits=2)
+    call qc%h(0)
+    call qc%cx(0, 1)
+    call qc%measure_all()
+
+    transpiled_qc = transpile(qc, backend=backend)
+
+    nq    = transpiled_qc%num_qubits()
+    nc    = transpiled_qc%num_clbits()
+    ninstr = transpiled_qc%num_instructions()
+
+    call assert_eq_int(nq, 2, "Transpiled with target: 2 qubits")
+    call assert_eq_int(nc, 2, "Transpiled with target: 2 clbits")
+    call assert_true(ninstr > 0, "Transpiled with target: has instructions")
+  end subroutine test_transpile_with_target
+
+  subroutine test_transpile_optimization_levels()
+    type(Target) :: backend
+    type(QuantumCircuit) :: qc, tqc
+    type(TranspileOptions) :: opts
+    integer :: level
+    integer(c_size_t) :: ninstr
+    call section("TranspileOptions optimization_level 0-3")
+
+    call create_test_backend(backend, num_qubits=2)
+    do level = 0, 3
+      call qc%init(num_qubits=2, num_clbits=2)
+      call qc%h(0)
+      call qc%cx(0, 1)
+      call qc%measure_all()
+      call opts%init(optimization_level=level)
+      tqc = transpile(qc, backend=backend, options=opts)
+      ninstr = tqc%num_instructions()
+      call assert_true(ninstr > 0, "optimization_level=" // char(48 + level) // ": has instructions")
+    end do
+  end subroutine test_transpile_optimization_levels
+
+  subroutine test_transpile_optimization_cancellation()
+    type(Target) :: backend
+    type(QuantumCircuit) :: qc, tqc_l0, tqc_l1
+    type(TranspileOptions) :: opts
+    integer(c_size_t) :: ninstr_l0, ninstr_l1
+    call section("TranspileOptions: level 1+ cancels redundant gates")
+
+    call create_test_backend(backend, num_qubits=2)
+
+    call qc%init(num_qubits=2, num_clbits=2)
+    call qc%h(0)
+    call qc%h(0)   ! cancels at level >= 1
+    call qc%cx(0, 1)
+    call qc%measure_all()
+
+    call opts%init(optimization_level=0)
+    tqc_l0 = transpile(qc, backend=backend, options=opts)
+    ninstr_l0 = tqc_l0%num_instructions()
+
+    call opts%init(optimization_level=1)
+    tqc_l1 = transpile(qc, backend=backend, options=opts)
+    ninstr_l1 = tqc_l1%num_instructions()
+
+    call assert_true(ninstr_l0 > ninstr_l1, &
+        "level 0 instr count > level 1 after H-H cancellation")
+  end subroutine test_transpile_optimization_cancellation
+#endif
 
 end program test_qiskit

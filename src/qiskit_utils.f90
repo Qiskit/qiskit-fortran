@@ -17,7 +17,6 @@ module qiskit_utils
   use, intrinsic :: iso_c_binding, only : c_int, c_int32_t
   
 #ifdef USE_SWIG_BINDINGS
-  ! use SWIG-generated module
   use qiskit_swigf, only : &
       QkExitCode_Success, &
       QkExitCode_CInputError, &
@@ -27,7 +26,6 @@ module qiskit_utils
       QkExitCode_ArithmeticError, &
       QkExitCode_MismatchedQubits
 #else
-  ! Handwritten mode: use separate modules
   use qiskit_c_api_types
 #endif
 
@@ -35,13 +33,9 @@ module qiskit_utils
   private
 
 #ifdef USE_SWIG_BINDINGS
-  ! define QK_QUBIT_KIND locally
   integer, parameter :: QK_QUBIT_KIND = c_int32_t
-  public :: check_rc, to_qubit, QK_QUBIT_KIND
-#else
-  ! In handwritten mode, QK_QUBIT_KIND comes from qiskit_c_api_types
-  public :: check_rc, to_qubit, QK_QUBIT_KIND
 #endif
+  public :: check_rc, to_qubit, QK_QUBIT_KIND
 
 contains
 

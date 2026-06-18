@@ -33,7 +33,7 @@ module qiskit_c_api_circuit
   public :: QkGate_DCX, QkGate_ECR, QkGate_Swap, QkGate_ISwap
   public :: QkGate_CCX
 
-  public :: qk_circuit_new, qk_circuit_free
+  public :: qk_circuit_new, qk_circuit_free, qk_circuit_copy
   public :: qk_circuit_num_qubits, qk_circuit_num_clbits
   public :: qk_circuit_num_instructions
   public :: qk_circuit_gate
@@ -89,6 +89,13 @@ module qiskit_c_api_circuit
       import :: c_ptr
       type(c_ptr), value, intent(in) :: circuit
     end subroutine qk_circuit_free
+
+    function qk_circuit_copy(circuit) result(ptr) &
+        bind(C, name="qk_circuit_copy")
+      import :: c_ptr
+      type(c_ptr), value, intent(in) :: circuit
+      type(c_ptr)                     :: ptr
+    end function qk_circuit_copy
 
     function qk_circuit_num_qubits(circuit) result(n) &
         bind(C, name="qk_circuit_num_qubits")
