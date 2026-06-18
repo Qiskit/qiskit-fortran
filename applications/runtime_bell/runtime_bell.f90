@@ -70,7 +70,7 @@ program runtime_bell
   ! 4. Get backend target and transpile the circuit.
   print '(/, a)', "Fetching backend target..."
   call flush(6)
-  backend_target = backend%get_target(service)
+  call backend%get_target(service, backend_target)
   print '(a, i0, a)', "Target has ", backend_target%num_qubits(), " qubits."
   call flush(6)
   
