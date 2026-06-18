@@ -15,13 +15,23 @@
 !> Provides the QuantumCircuit type for building and manipulating quantum circuits.
 module qiskit_circuit
   use, intrinsic :: iso_c_binding, only : &
-      c_ptr, c_null_ptr, c_associated, c_loc, c_int, c_double, c_size_t
+      c_ptr, c_null_ptr, c_associated, c_loc, c_int, c_double, c_size_t, c_int32_t
+
+#ifdef USE_SWIG_BINDINGS
+  use qiskit_swigf
+  use qiskit_utils, only : check_rc, to_qubit
+#else
   use qiskit_c_api_types,   only : QK_QUBIT_KIND
   use qiskit_c_api_circuit
-  use qiskit_utils,         only : check_rc, to_qubit
+  use qiskit_utils,         only : check_rc, to_qubit, QK_QUBIT_KIND
+#endif
 
   implicit none (type, external)
   private
+
+#ifdef USE_SWIG_BINDINGS
+  integer, parameter :: QK_QUBIT_KIND = c_int32_t
+#endif
 
   public :: QuantumCircuit
 
@@ -75,12 +85,24 @@ contains
     real(c_double),         target, intent(in), optional :: params(:)
 
     integer(c_int) :: rc
-    type(c_ptr)    :: qubit_ptr, param_ptr
+#ifndef USE_SWIG_BINDINGS
+    ! Handwritten mode needs pointer variables
+    type(c_ptr) :: qubit_ptr, param_ptr
+#endif
 
     if (.not. c_associated(ptr)) &
         error stop "[qiskit_circuit] dispatch_gate: uninitialised circuit"
 
-    ! Direct c_loc on Fortran arrays - no intermediate allocations
+#ifdef USE_SWIG_BINDINGS
+    ! SWIG mode: pass arrays directly
+    if (present(params)) then
+      rc = qk_circuit_gate(ptr, gate_id, qubits(1), params(1))
+    else
+      ! SWIG expects a value, use 0.0 as dummy (won't be accessed if gate has no params)
+      rc = qk_circuit_gate(ptr, gate_id, qubits(1), 0.0_c_double)
+    end if
+#else
+    ! Handwritten mode: pass pointers
     qubit_ptr = c_loc(qubits(1))
     
     if (present(params)) then
@@ -90,6 +112,7 @@ contains
     end if
 
     rc = qk_circuit_gate(ptr, gate_id, qubit_ptr, param_ptr)
+#endif
 
     call check_rc(rc, "dispatch_gate")
   end subroutine dispatch_gate
@@ -445,7 +468,13 @@ contains
       q_arr(i) = to_qubit(qubits(i))
     end do
 
+#ifdef USE_SWIG_BINDINGS
+    ! SWIG mode: pass array directly
+    rc = qk_circuit_barrier(self%ptr, q_arr(1), to_qubit(n))
+#else
+    ! Handwritten mode: pass pointer
     rc = qk_circuit_barrier(self%ptr, c_loc(q_arr(1)), to_qubit(n))
+#endif
     call check_rc(rc, "barrier")
   end subroutine qc_barrier
 
@@ -463,7 +492,13 @@ contains
       q_arr(i) = to_qubit(i - 1)
     end do
 
+#ifdef USE_SWIG_BINDINGS
+    ! SWIG mode: pass array directly
+    rc = qk_circuit_barrier(self%ptr, q_arr(1), to_qubit(nq))
+#else
+    ! Handwritten mode: pass pointer
     rc = qk_circuit_barrier(self%ptr, c_loc(q_arr(1)), to_qubit(nq))
+#endif
     call check_rc(rc, "barrier_all")
   end subroutine qc_barrier_all
 

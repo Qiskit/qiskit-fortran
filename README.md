@@ -76,6 +76,29 @@ cmake -B build-debug \
 cmake --build build-debug -j$(nproc)
 ```
 
+### Build Options: Manual vs SWIG Bindings
+
+The project supports two C API binding methods:
+
+**Manual bindings (default)**: Hand-written interfaces covering essential circuit operations. Minimal dependencies, readable code, fast builds.
+
+**SWIG bindings**: Auto-generated, directly from C headers providing complete API coverage. Pre-generated bindings are included; SWIG is only needed to regenerate them.
+
+```bash
+# Build with SWIG bindings (uses pre-generated files)
+cmake -B build-swig \
+      -DQISKIT_ROOT=/path/to/qiskit \
+      -DUSE_SWIG_BINDINGS=ON
+cmake --build build-swig
+
+# Test with CMake
+cmake --build build-swig --target test
+```
+
+To regenerate bindings (requires [SWIG-Fortran](https://github.com/swig-fortran/swig))
+
+The high-level API works identically with both backends.
+
 ---
 
 ## Step 3 — Run the tests

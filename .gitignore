@@ -1,5 +1,6 @@
 # Build directory
 build/
+build-swig/
 
 # Fortran module files
 *.mod
