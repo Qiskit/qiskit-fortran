@@ -114,39 +114,7 @@ cd build && make test
 make run_test
 ```
 
-**Linux note:** The same RPATH mechanism applies (`DT_RUNPATH` in the ELF binary). If you build outside CMake or need to override, `export LD_LIBRARY_PATH=/path/to/dist/c/lib` is sufficient, matching Qiskit's own install guide.
-
-Expected output (all passing):
-```
---- Gate enum constants verification ---
-  [PASS] QkGate_GlobalPhase == 0
-  [PASS] QkGate_H == 1
-  ...
-  [PASS] QkGate_CCX == 45
-
---- Construction ---
-  [PASS] num_qubits == 5
-  [PASS] num_clbits == 5
-  [PASS] empty circuit has 0 instructions
-  ...
-
---- Bell state ---
-  [PASS] after H: 1 instruction
-  [PASS] after CX: 2 instructions
-  ...
-
---- Large circuit (100 qubits) ---
-  [PASS] 100×H: 100 instructions
-  [PASS] 100×H + 50×CX: 150 instructions
-  [PASS] after 100×Rz: 250 instructions
-  [PASS] after measure_all: 350 instructions
-
-========================================
-  PASS : 90
-  FAIL : 0
-========================================
-```
-
+**Linux note:** The same RPATH mechanism applies (`DT_RUNPATH` in the ELF binary). If you build outside CMake or need to override, `export LD_LIBRARY_PATH=/path/to/dist/c/lib` is sufficient, matching Qiskit's own install guide
 The test binary exits 0 on all-pass, non-zero (via `error stop`) on any
 failure, so it integrates cleanly with CTest and CI pipelines.
 
