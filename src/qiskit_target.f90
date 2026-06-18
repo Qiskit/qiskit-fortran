@@ -46,7 +46,7 @@ module qiskit_target
     procedure, public :: add_instruction    => tg_add_instruction
     procedure, public :: num_instructions   => tg_num_instructions
     procedure, public :: get_c_ptr          => tg_get_c_ptr
-    procedure, private :: from_ptr          => tg_from_ptr
+    procedure, public :: from_ptr           => tg_from_ptr
     final :: tg_destroy
   end type Target
 

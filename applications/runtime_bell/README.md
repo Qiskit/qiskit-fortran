@@ -4,7 +4,8 @@ Submits a Bell circuit to IBM Quantum through `qiskit_runtime` and prints the
 samples it gets back.
 
 Builds the circuit (`H(0)`, `CX(0,1)`, measure), connects, picks the least busy
-backend, runs a Sampler job, polls until it's done, reads the samples.
+backend, transpiles the circuit for the target backend, runs a Sampler job,
+polls until it's done, reads the samples.
 
 ## Needs
 
@@ -28,6 +29,6 @@ cmake --build build
 Backends and counts depend on your account. For a Bell state the samples
 cluster on `00` and `11`.
 
-The circuit is submitted as built. Target-aware transpilation
-(`qk_transpile`) isn't bound yet, so a backend that needs transpiled input may
-reject it. That's the next thing to bind.
+The circuit is now transpiled for the target backend before submission using
+the `transpile()` function from the `qiskit` module. This ensures the circuit
+is compatible with the backend's gate set and connectivity constraints.

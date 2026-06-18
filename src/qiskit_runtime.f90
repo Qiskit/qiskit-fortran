@@ -66,6 +66,7 @@ module qiskit_runtime
     procedure, public :: instance_crn  => be_instance_crn
     procedure, public :: instance_name => be_instance_name
     procedure, public :: is_valid      => be_is_valid
+    procedure, public :: get_target    => be_get_target
   end type
 
   type :: RtJob
@@ -281,6 +282,25 @@ contains
     logical :: ok
     ok = c_associated(self%ptr)
   end function
+
+  !> @brief Get the Target for this backend
+  !> @param service the runtime service (needed to fetch backend configuration)
+  !> @return Target object representing backend constraints
+  function be_get_target(self, service) result(backend_target)
+    use qiskit_target, only : Target
+    class(RtBackend), intent(in) :: self
+    type(RtService), intent(in) :: service
+    type(Target) :: backend_target
+    type(c_ptr) :: target_ptr
+    if (.not. c_associated(self%ptr)) &
+        error stop "[qiskit_runtime] get_target: invalid backend"
+    if (.not. c_associated(service%ptr)) &
+        error stop "[qiskit_runtime] get_target: service not connected"
+    target_ptr = qkrt_get_backend_target(service%ptr, self%ptr)
+    if (.not. c_associated(target_ptr)) &
+        error stop "[qiskit_runtime] get_target: failed to retrieve target"
+    call backend_target%from_ptr(target_ptr)
+  end function be_get_target
 
   ! --- RtJob ----------------------------------------------------------------
 
