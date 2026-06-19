@@ -161,7 +161,8 @@ set(CMAKE_Fortran_MODULE_DIRECTORY "${CMAKE_BINARY_DIR}/modules")
 #
 # Layer order (SWIG path):
 #   L0: qiskit_swigf       (SWIG-generated, no deps)
-#   L1: qiskit_utils       (USE L0)
+#   L1: qiskit_utils       (USE L0; defines QkComplex, to_qubit, check_rc: available
+#                           unconditionally in both build paths; no QkComplex64 dep)
 #   L2: qiskit_circuit     (USE L1)
 #   L3: qiskit_observable  (USE L0, L1; global SWIG imports)
 #   L4: qiskit_target      (USE L1; qk_target_* imported locally per procedure)

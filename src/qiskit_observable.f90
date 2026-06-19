@@ -17,7 +17,7 @@
 module qiskit_observable
   use, intrinsic :: iso_c_binding, only : &
       c_ptr, c_null_ptr, c_associated, c_int, c_int8_t, c_int32_t, c_int64_t, &
-      c_size_t, c_double, c_bool, c_char, c_null_char, c_f_pointer, c_loc
+      c_size_t, c_double, c_double_complex, c_bool, c_char, c_null_char, c_f_pointer, c_loc
 
 #ifdef USE_SWIG_BINDINGS
   use qiskit_swigf, only : &
@@ -32,7 +32,7 @@ module qiskit_observable
       qk_obs_equal, qk_obs_str, qk_obsterm_str
 #endif
 
-  use qiskit_utils, only : check_rc, to_qubit, QK_QUBIT_KIND
+  use qiskit_utils, only : check_rc, to_qubit, QK_QUBIT_KIND, QkComplex
 
   implicit none (type, external)
   private
@@ -40,13 +40,32 @@ module qiskit_observable
   public :: Observable
   public :: ObsTerm
   public :: Complex64
+  public :: complex64_from_native
+  public :: QkComplex
 
   !> @brief Complex number type for observable coefficients
-  !> @note Matches QkComplex64 from SWIG bindings
+  !>
+  !> Matches the memory layout of QkComplex64 from SWIG bindings (two consecutive
+  !> c_doubles). Not bind(C) itself so it can live in a polymorphic context, but
+  !> field-by-field copy into QkComplex64 at every C call site is safe because the
+  !> layouts are identical.
+  !>
+  !> Construct with the default structure constructor Complex64(re, im) or, when
+  !> working with native Fortran complex literals, with complex64_from_native(z).
   type :: Complex64
     real(c_double) :: re = 0.0_c_double
     real(c_double) :: im = 0.0_c_double
   end type Complex64
+
+  !> @brief Overloaded constructor: Complex64 from a native complex(c_double_complex)
+  !>
+  !> Allows callers to pass Fortran complex literals directly:
+  !>   call obs%multiply(complex64_from_native((0.5_c_double, 0.0_c_double)), result)
+  !> The interface boundary to the C API (QkComplex64) is unchanged; this only
+  !> removes the struct-literal ceremony on the Fortran side.
+  interface Complex64
+    module procedure complex64_from_native
+  end interface Complex64
 
   !> @brief Observable term with coefficient and Pauli operators
   !> @note Matches QkObsTerm from SWIG bindings
@@ -116,6 +135,30 @@ module qiskit_observable
   end type Observable
 
 contains
+
+  ! Complex64 helpers
+
+  !> @brief Construct Complex64 from a native Fortran complex value
+  !> @param z native complex(c_double_complex) value
+  !> @return Complex64 with matching real and imaginary parts
+  !> @note Pure so it can be used in array constructors and constant expressions.
+  pure type(Complex64) function complex64_from_native(z)
+    complex(c_double_complex), intent(in) :: z
+    complex64_from_native%re = real(z, c_double)
+    complex64_from_native%im = aimag(z)
+  end function complex64_from_native
+
+  !> @brief Convert Complex64 to QkComplex64 (elemental for array bulk-conversion)
+  !>
+  !> Elemental so the conversion from the public Complex64 array to the bind(C)
+  !> QkComplex64 array required by the C API can be expressed as a whole-array
+  !> assignment rather than a manual loop.  Private: callers never need this
+  !> directly; it exists to let obs_init_new avoid an explicit do-loop.
+  elemental type(QkComplex64) function complex64_to_c(z)
+    type(Complex64), intent(in) :: z
+    complex64_to_c%re = z%re
+    complex64_to_c%im = z%im
+  end function complex64_to_c
 
   ! Constructors
 
@@ -188,20 +231,16 @@ contains
       end function
     end interface
 
-    type(QkComplex64), pointer :: c_coeffs(:)
-    integer :: i
+    ! complex64_to_c is elemental, so the whole-array conversion below avoids an
+    ! explicit loop while keeping the public API on Complex64 (not bind(C)).
+    type(QkComplex64), allocatable :: c_coeffs(:)
 
     if (c_associated(self%ptr)) then
       call qk_obs_free(self%ptr)
       self%ptr = c_null_ptr
     end if
 
-    ! Convert Complex64 array to QkComplex64 for C API
-    allocate(c_coeffs(num_terms))
-    do i = 1, int(num_terms)
-      c_coeffs(i)%re = coeffs(i)%re
-      c_coeffs(i)%im = coeffs(i)%im
-    end do
+    c_coeffs = complex64_to_c(coeffs(1:num_terms))
 
     self%ptr = qk_obs_new_u8(to_qubit(num_qubits), num_terms, num_bits, &
                               c_coeffs(1), bit_terms(1), indices(1), boundaries(1))
