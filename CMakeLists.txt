@@ -163,9 +163,10 @@ set(CMAKE_Fortran_MODULE_DIRECTORY "${CMAKE_BINARY_DIR}/modules")
 #   L0: qiskit_swigf       (SWIG-generated, no deps)
 #   L1: qiskit_utils       (USE L0)
 #   L2: qiskit_circuit     (USE L1)
-#   L3: qiskit_target      (USE L1; qk_target_* imported locally per procedure)
-#   L4: qiskit_transpiler  (USE L2, L3; same local-import pattern)
-#   L5: qiskit             (USE L2, L3, L4)
+#   L3: qiskit_observable  (USE L0, L1; global SWIG imports)
+#   L4: qiskit_target      (USE L1; qk_target_* imported locally per procedure)
+#   L5: qiskit_transpiler  (USE L2, L4; same local-import pattern)
+#   L6: qiskit             (USE L2, L3, L4, L5)
 #
 # qiskit_target and qiskit_transpiler are SWIG-only (no manual C API equivalents yet).
 # Manual path uses a single add_library; gfortran's scanner handles ordering.
@@ -186,15 +187,17 @@ if(USE_SWIG_BINDINGS)
   fortran_layer(qk_layer0 "${SWIG_OUTPUT_F90}")
   fortran_layer(qk_layer1 src/qiskit_utils.f90)
   fortran_layer(qk_layer2 src/qiskit_circuit.f90)
-  fortran_layer(qk_layer3 src/qiskit_target.f90)
-  fortran_layer(qk_layer4 src/qiskit_transpiler.f90)
-  fortran_layer(qk_layer5 src/qiskit.f90)
+  fortran_layer(qk_layer3 src/qiskit_observable.f90)
+  fortran_layer(qk_layer4 src/qiskit_target.f90)
+  fortran_layer(qk_layer5 src/qiskit_transpiler.f90)
+  fortran_layer(qk_layer6 src/qiskit.f90)
 
   add_dependencies(qk_layer1 qk_layer0)
   add_dependencies(qk_layer2 qk_layer1)
-  add_dependencies(qk_layer3 qk_layer1)
-  add_dependencies(qk_layer4 qk_layer2 qk_layer3)
-  add_dependencies(qk_layer5 qk_layer4)
+  add_dependencies(qk_layer3 qk_layer0 qk_layer1)
+  add_dependencies(qk_layer4 qk_layer1)
+  add_dependencies(qk_layer5 qk_layer2 qk_layer4)
+  add_dependencies(qk_layer6 qk_layer5)
 
   set(QISKIT_C_API_SOURCES "")
   set(QISKIT_EXTRA_OBJECTS
@@ -204,7 +207,8 @@ if(USE_SWIG_BINDINGS)
     $<TARGET_OBJECTS:qk_layer2>
     $<TARGET_OBJECTS:qk_layer3>
     $<TARGET_OBJECTS:qk_layer4>
-    $<TARGET_OBJECTS:qk_layer5>)
+    $<TARGET_OBJECTS:qk_layer5>
+    $<TARGET_OBJECTS:qk_layer6>)
 
   # Add runtime layers if runtime is enabled
   if(QISKIT_FORTRAN_RUNTIME)
@@ -223,7 +227,7 @@ endif()
 if(USE_SWIG_BINDINGS)
   # All Fortran sources compiled as layered OBJECT libs above; just bundle objects.
   add_library(qiskit-fortran STATIC ${QISKIT_EXTRA_OBJECTS})
-  add_dependencies(qiskit-fortran qk_layer5 qiskit_swig_wrapper)
+  add_dependencies(qiskit-fortran qk_layer6 qiskit_swig_wrapper)
 else()
   set(QISKIT_FORTRAN_SOURCES
     ${QISKIT_C_API_SOURCES}
