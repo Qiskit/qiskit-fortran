@@ -16,8 +16,8 @@
 !> which are represented as sums of Pauli terms with complex coefficients.
 module qiskit_observable
   use, intrinsic :: iso_c_binding, only : &
-      c_ptr, c_null_ptr, c_associated, c_int, c_int32_t, c_int64_t, &
-      c_size_t, c_double, c_bool, c_char, c_null_char, c_f_pointer
+      c_ptr, c_null_ptr, c_associated, c_int, c_int8_t, c_int32_t, c_int64_t, &
+      c_size_t, c_double, c_bool, c_char, c_null_char, c_f_pointer, c_loc
 
 #ifdef USE_SWIG_BINDINGS
   use qiskit_swigf, only : &
@@ -92,18 +92,18 @@ module qiskit_observable
     procedure, public :: add_term      => obs_add_term
     procedure, public :: get_term      => obs_get_term
     
-    ! Arithmetic operations
+    ! Arithmetic operations (subroutine-style, result passed as intent(out))
     procedure, public :: multiply      => obs_multiply
     procedure, public :: multiply_inplace => obs_multiply_inplace
     procedure, public :: add           => obs_add
     procedure, public :: add_inplace   => obs_add_inplace
     procedure, public :: scaled_add    => obs_scaled_add
     procedure, public :: scaled_add_inplace => obs_scaled_add_inplace
-    
-    ! Composition
+
+    ! Composition (subroutine-style)
     procedure, public :: compose       => obs_compose
     procedure, public :: compose_map   => obs_compose_map
-    
+
     ! Utility methods
     procedure, public :: apply_layout  => obs_apply_layout
     procedure, public :: canonicalize  => obs_canonicalize
@@ -165,9 +165,28 @@ contains
     integer(c_int64_t), intent(in) :: num_terms
     integer(c_int64_t), intent(in) :: num_bits
     type(Complex64), intent(in), target :: coeffs(*)
-    integer(c_int), intent(in), target :: bit_terms(*)
+    integer(c_int8_t), intent(in), target :: bit_terms(*)
     integer(c_int32_t), intent(in), target :: indices(*)
     integer(c_size_t), intent(in), target :: boundaries(*)
+
+    ! Local interface: QkBitTerm is uint8_t; the SWIG binding wrongly uses C_INT,
+    ! so we re-declare qk_obs_new here with the correct 1-byte type. Needs porting 
+    ! after handwritten bindings made available
+    interface
+      function qk_obs_new_u8(num_qubits, num_terms, num_bits, coeffs, bit_terms, indices, boundaries) &
+          bind(C, name="qk_obs_new") result(fresult)
+        use, intrinsic :: ISO_C_BINDING
+        import :: QkComplex64
+        integer(C_INT32_T), intent(in), value :: num_qubits
+        integer(C_INT64_T), intent(in), value :: num_terms
+        integer(C_INT64_T), intent(in), value :: num_bits
+        type(QkComplex64) :: coeffs
+        integer(C_INT8_T) :: bit_terms
+        integer(C_INT32_T) :: indices
+        integer(C_SIZE_T) :: boundaries
+        type(C_PTR) :: fresult
+      end function
+    end interface
 
     type(QkComplex64), pointer :: c_coeffs(:)
     integer :: i
@@ -183,12 +202,12 @@ contains
       c_coeffs(i)%re = coeffs(i)%re
       c_coeffs(i)%im = coeffs(i)%im
     end do
-    
-    self%ptr = qk_obs_new(to_qubit(num_qubits), num_terms, num_bits, &
-                          c_coeffs(1), bit_terms(1), indices(1), boundaries(1))
-    
+
+    self%ptr = qk_obs_new_u8(to_qubit(num_qubits), num_terms, num_bits, &
+                              c_coeffs(1), bit_terms(1), indices(1), boundaries(1))
+
     deallocate(c_coeffs)
-    
+
     if (.not. c_associated(self%ptr)) &
         error stop "[qiskit_observable] init_new: qk_obs_new returned null"
   end subroutine obs_init_new
@@ -367,28 +386,29 @@ contains
 
   ! Arithmetic operations
 
-  !> @brief Multiply observable by a scalar (returns new observable)
+  !> @brief Multiply observable by a scalar (result returned via intent(out))
   !> @param coeff complex coefficient
-  function obs_multiply(self, coeff) result(result_obs)
+  !> @param result_obs output: result observable (caller must call destroy when done)
+  subroutine obs_multiply(self, coeff, result_obs)
     class(Observable), intent(in) :: self
     type(Complex64), intent(in) :: coeff
-    type(Observable) :: result_obs
-    
+    type(Observable), intent(out) :: result_obs
+
     type(QkComplex64) :: c_coeff
     type(c_ptr) :: result_ptr
-    
+
     if (.not. c_associated(self%ptr)) &
         error stop "[qiskit_observable] multiply: uninitialised observable"
-    
+
     c_coeff%re = coeff%re
     c_coeff%im = coeff%im
-    
+
     result_ptr = qk_obs_multiply(self%ptr, c_coeff)
     if (.not. c_associated(result_ptr)) &
         error stop "[qiskit_observable] multiply: operation failed"
-    
-    call result_obs%from_ptr(result_ptr)
-  end function obs_multiply
+
+    result_obs%ptr = result_ptr
+  end subroutine obs_multiply
 
   !> @brief Multiply observable by a scalar in-place
   !> @param coeff complex coefficient
@@ -407,32 +427,33 @@ contains
     call qk_obs_multiply_inplace(self%ptr, c_coeff)
   end subroutine obs_multiply_inplace
 
-  !> @brief Add two observables (returns new observable)
+  !> @brief Add two observables (result returned via intent(out))
   !> @param other observable to add
-  function obs_add(self, other) result(result_obs)
+  !> @param result_obs output: result observable
+  subroutine obs_add(self, other, result_obs)
     class(Observable), intent(in) :: self
-    type(Observable), intent(in) :: other
-    type(Observable) :: result_obs
-    
+    class(Observable), intent(in) :: other
+    type(Observable), intent(out) :: result_obs
+
     type(c_ptr) :: result_ptr
-    
+
     if (.not. c_associated(self%ptr)) &
         error stop "[qiskit_observable] add: uninitialised observable (self)"
     if (.not. c_associated(other%ptr)) &
         error stop "[qiskit_observable] add: uninitialised observable (other)"
-    
+
     result_ptr = qk_obs_add(self%ptr, other%ptr)
     if (.not. c_associated(result_ptr)) &
         error stop "[qiskit_observable] add: operation failed"
-    
-    call result_obs%from_ptr(result_ptr)
-  end function obs_add
+
+    result_obs%ptr = result_ptr
+  end subroutine obs_add
 
   !> @brief Add observable in-place
   !> @param other observable to add
   subroutine obs_add_inplace(self, other)
     class(Observable), intent(inout) :: self
-    type(Observable), intent(in) :: other
+    class(Observable), intent(in) :: other
     
     if (.not. c_associated(self%ptr)) &
         error stop "[qiskit_observable] add_inplace: uninitialised observable (self)"
@@ -442,39 +463,40 @@ contains
     call qk_obs_add_inplace(self%ptr, other%ptr)
   end subroutine obs_add_inplace
 
-  !> @brief Scaled addition: self + factor * other (returns new observable)
+  !> @brief Scaled addition: self + factor * other (result via intent(out))
   !> @param other observable to add
   !> @param factor scaling factor
-  function obs_scaled_add(self, other, factor) result(result_obs)
+  !> @param result_obs output: result observable
+  subroutine obs_scaled_add(self, other, factor, result_obs)
     class(Observable), intent(in) :: self
-    type(Observable), intent(in) :: other
+    class(Observable), intent(in) :: other
     type(Complex64), intent(in) :: factor
-    type(Observable) :: result_obs
-    
+    type(Observable), intent(out) :: result_obs
+
     type(QkComplex64) :: c_factor
     type(c_ptr) :: result_ptr
-    
+
     if (.not. c_associated(self%ptr)) &
         error stop "[qiskit_observable] scaled_add: uninitialised observable (self)"
     if (.not. c_associated(other%ptr)) &
         error stop "[qiskit_observable] scaled_add: uninitialised observable (other)"
-    
+
     c_factor%re = factor%re
     c_factor%im = factor%im
-    
+
     result_ptr = qk_obs_scaled_add(self%ptr, other%ptr, c_factor)
     if (.not. c_associated(result_ptr)) &
         error stop "[qiskit_observable] scaled_add: operation failed"
-    
-    call result_obs%from_ptr(result_ptr)
-  end function obs_scaled_add
+
+    result_obs%ptr = result_ptr
+  end subroutine obs_scaled_add
 
   !> @brief Scaled addition in-place: self = self + factor * other
   !> @param other observable to add
   !> @param factor scaling factor
   subroutine obs_scaled_add_inplace(self, other, factor)
     class(Observable), intent(inout) :: self
-    type(Observable), intent(in) :: other
+    class(Observable), intent(in) :: other
     type(Complex64), intent(in) :: factor
     
     type(QkComplex64) :: c_factor
@@ -494,47 +516,48 @@ contains
 
   !> @brief Compose two observables (tensor product)
   !> @param other observable to compose with
-  function obs_compose(self, other) result(result_obs)
+  subroutine obs_compose(self, other, result_obs)
     class(Observable), intent(in) :: self
-    type(Observable), intent(in) :: other
-    type(Observable) :: result_obs
-    
+    class(Observable), intent(in) :: other
+    type(Observable), intent(out) :: result_obs
+
     type(c_ptr) :: result_ptr
-    
+
     if (.not. c_associated(self%ptr)) &
         error stop "[qiskit_observable] compose: uninitialised observable (self)"
     if (.not. c_associated(other%ptr)) &
         error stop "[qiskit_observable] compose: uninitialised observable (other)"
-    
+
     result_ptr = qk_obs_compose(self%ptr, other%ptr)
     if (.not. c_associated(result_ptr)) &
         error stop "[qiskit_observable] compose: operation failed"
-    
-    call result_obs%from_ptr(result_ptr)
-  end function obs_compose
+
+    result_obs%ptr = result_ptr
+  end subroutine obs_compose
 
   !> @brief Compose with qubit mapping
   !> @param other observable to compose with
   !> @param qargs qubit indices for mapping
-  function obs_compose_map(self, other, qargs) result(result_obs)
+  !> @param result_obs output: result observable
+  subroutine obs_compose_map(self, other, qargs, result_obs)
     class(Observable), intent(in) :: self
-    type(Observable), intent(in) :: other
+    class(Observable), intent(in) :: other
     integer(c_int32_t), intent(in), target :: qargs(*)
-    type(Observable) :: result_obs
-    
+    type(Observable), intent(out) :: result_obs
+
     type(c_ptr) :: result_ptr
-    
+
     if (.not. c_associated(self%ptr)) &
         error stop "[qiskit_observable] compose_map: uninitialised observable (self)"
     if (.not. c_associated(other%ptr)) &
         error stop "[qiskit_observable] compose_map: uninitialised observable (other)"
-    
+
     result_ptr = qk_obs_compose_map(self%ptr, other%ptr, qargs(1))
     if (.not. c_associated(result_ptr)) &
         error stop "[qiskit_observable] compose_map: operation failed"
-    
-    call result_obs%from_ptr(result_ptr)
-  end function obs_compose_map
+
+    result_obs%ptr = result_ptr
+  end subroutine obs_compose_map
 
   ! Utility methods
 
@@ -557,45 +580,47 @@ contains
 
   !> @brief Canonicalize observable (simplify and remove small terms)
   !> @param tol tolerance for removing small coefficients
-  function obs_canonicalize(self, tol) result(result_obs)
+  !> @param result_obs output: canonicalized observable
+  subroutine obs_canonicalize(self, tol, result_obs)
     class(Observable), intent(in) :: self
     real(c_double), intent(in) :: tol
-    type(Observable) :: result_obs
-    
+    type(Observable), intent(out) :: result_obs
+
     type(c_ptr) :: result_ptr
-    
+
     if (.not. c_associated(self%ptr)) &
         error stop "[qiskit_observable] canonicalize: uninitialised observable"
-    
+
     result_ptr = qk_obs_canonicalize(self%ptr, tol)
     if (.not. c_associated(result_ptr)) &
         error stop "[qiskit_observable] canonicalize: operation failed"
-    
-    call result_obs%from_ptr(result_ptr)
-  end function obs_canonicalize
+
+    result_obs%ptr = result_ptr
+  end subroutine obs_canonicalize
 
   !> @brief Create a copy of the observable
-  function obs_copy(self) result(result_obs)
+  !> @param result_obs output: copy of this observable
+  subroutine obs_copy(self, result_obs)
     class(Observable), intent(in) :: self
-    type(Observable) :: result_obs
-    
+    type(Observable), intent(out) :: result_obs
+
     type(c_ptr) :: result_ptr
-    
+
     if (.not. c_associated(self%ptr)) &
         error stop "[qiskit_observable] copy: uninitialised observable"
-    
+
     result_ptr = qk_obs_copy(self%ptr)
     if (.not. c_associated(result_ptr)) &
         error stop "[qiskit_observable] copy: operation failed"
-    
-    call result_obs%from_ptr(result_ptr)
-  end function obs_copy
+
+    result_obs%ptr = result_ptr
+  end subroutine obs_copy
 
   !> @brief Check if two observables are equal
   !> @param other observable to compare with
   function obs_equal(self, other) result(is_equal)
     class(Observable), intent(in) :: self
-    type(Observable), intent(in) :: other
+    class(Observable), intent(in) :: other
     logical :: is_equal
     
     logical(c_bool) :: c_result

@@ -520,7 +520,7 @@ contains
   !> @brief Get C pointer for interop (INTERNAL USE ONLY)
   !> @return C pointer to circuit
   !> @note This is an internal method for transpiler interop; not part of public API
-  function qc_get_c_ptr(self) result(ptr)
+  pure function qc_get_c_ptr(self) result(ptr)
     class(QuantumCircuit), intent(in) :: self
     type(c_ptr) :: ptr
     ptr = self%ptr

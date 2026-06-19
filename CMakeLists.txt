@@ -197,7 +197,7 @@ if(USE_SWIG_BINDINGS)
   add_dependencies(qk_layer3 qk_layer0 qk_layer1)
   add_dependencies(qk_layer4 qk_layer1)
   add_dependencies(qk_layer5 qk_layer2 qk_layer4)
-  add_dependencies(qk_layer6 qk_layer5)
+  add_dependencies(qk_layer6 qk_layer3 qk_layer5)
 
   set(QISKIT_C_API_SOURCES "")
   set(QISKIT_EXTRA_OBJECTS
