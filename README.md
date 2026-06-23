@@ -114,39 +114,7 @@ cd build && make test
 make run_test
 ```
 
-**Linux note:** The same RPATH mechanism applies (`DT_RUNPATH` in the ELF binary). If you build outside CMake or need to override, `export LD_LIBRARY_PATH=/path/to/dist/c/lib` is sufficient, matching Qiskit's own install guide.
-
-Expected output (all passing):
-```
---- Gate enum constants verification ---
-  [PASS] QkGate_GlobalPhase == 0
-  [PASS] QkGate_H == 1
-  ...
-  [PASS] QkGate_CCX == 45
-
---- Construction ---
-  [PASS] num_qubits == 5
-  [PASS] num_clbits == 5
-  [PASS] empty circuit has 0 instructions
-  ...
-
---- Bell state ---
-  [PASS] after H: 1 instruction
-  [PASS] after CX: 2 instructions
-  ...
-
---- Large circuit (100 qubits) ---
-  [PASS] 100×H: 100 instructions
-  [PASS] 100×H + 50×CX: 150 instructions
-  [PASS] after 100×Rz: 250 instructions
-  [PASS] after measure_all: 350 instructions
-
-========================================
-  PASS : 90
-  FAIL : 0
-========================================
-```
-
+**Linux note:** The same RPATH mechanism applies (`DT_RUNPATH` in the ELF binary). If you build outside CMake or need to override, `export LD_LIBRARY_PATH=/path/to/dist/c/lib` is sufficient, matching Qiskit's own install guide
 The test binary exits 0 on all-pass, non-zero (via `error stop`) on any
 failure, so it integrates cleanly with CTest and CI pipelines.
 
@@ -245,6 +213,34 @@ doxygen
 ```
 
 Output is in `docs/html/index.html`. The high-level API is documented with Fortran-specific usage patterns. The FFI layer (`qiskit_c_api*.f90`) defers to the [Qiskit C API reference](https://docs.quantum.ibm.com/api/qiskit-c).
+
+## IBM Runtime
+
+Optional binding to [qiskit-ibm-runtime-c](https://github.com/Qiskit/qiskit-ibm-runtime-c)
+for running circuits on IBM Quantum. `qiskit_runtime` adds `RtService`,
+`RtBackendList`, `RtBackend`, `RtJob`, `RtSamplerResult` and `RtEstimatorResult`.
+
+Off by default (it needs `libqiskit_ibm_runtime`):
+
+### Build qiskit-ibm-runtime-c
+```bash
+gh repo clone Qiskit/qiskit-ibm-runtime-c
+cd qiskit-ibm-runtime-c
+mkdir build && cd build
+cmake ..
+make
+```
+This produces `build/cargo/debug/libqiskit_ibm_runtime.dylib` (macOS) or `.so` (Linux).
+
+### Build qiskit-fortran with runtime enabled
+```bash
+cmake -B build -DQISKIT_ROOT=/path/to/qiskit \
+      -DQISKIT_FORTRAN_RUNTIME=ON \
+      -DQISKIT_RUNTIME_ROOT=/path/to/qiskit-ibm-runtime-c
+```
+
+`test/test_runtime.f90` covers the parts that don't need hardware;
+`applications/runtime_bell` is a full submit-and-read-back run (needs credentials).
 
 ## License
 
