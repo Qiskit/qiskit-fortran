@@ -17,7 +17,8 @@
 #
 # Required CMake variables:
 #   APP_NAME            Name of the application to build (must match a
-#                       subdirectory under applications/ containing <name>.f90)
+#                       subdirectory under applications/ containing <name>.f90
+#                       or <name>_test.f90 for test-only applications)
 #   QISKIT_FORTRAN_ROOT Path to the qiskit-fortran build directory
 #                       (contains libqiskit-fortran.a and modules/)
 #   QISKIT_ROOT         Path to the Qiskit repository after running `make c`
@@ -36,6 +37,75 @@ set(QISKIT_ROOT         "" CACHE PATH   "Path to Qiskit repository")
 set(QISKIT_RUNTIME_ROOT "" CACHE PATH   "Path to qiskit-ibm-runtime-c (apps using the runtime binding)")
 
 # ---------------------------------------------------------------------------
+# Setup for subdirectories (if building without APP_NAME)
+# ---------------------------------------------------------------------------
+if(APP_NAME STREQUAL "" AND NOT QISKIT_FORTRAN_ROOT STREQUAL "")
+  # Find qiskit-fortran library for subdirectories
+  find_library(QISKIT_FORTRAN_LIB
+      NAMES qiskit-fortran
+      HINTS "${QISKIT_FORTRAN_ROOT}"
+      REQUIRED)
+  
+  # Find Qiskit C library
+  find_library(QISKIT_LIB
+      NAMES qiskit qiskit_cext
+      HINTS "${QISKIT_ROOT}/dist/c/lib"
+            "${QISKIT_ROOT}/target/release"
+      REQUIRED)
+  
+  message(STATUS "qiskit-fortran lib: ${QISKIT_FORTRAN_LIB}")
+  message(STATUS "Qiskit C lib: ${QISKIT_LIB}")
+  
+  # Create imported target for qiskit-fortran with proper dependencies
+  add_library(qiskit-fortran STATIC IMPORTED)
+  set_target_properties(qiskit-fortran PROPERTIES
+      IMPORTED_LOCATION "${QISKIT_FORTRAN_LIB}"
+      INTERFACE_LINK_LIBRARIES "${QISKIT_LIB}")
+  
+  # Set module directory for subdirectories to find qiskit modules
+  set(CMAKE_Fortran_MODULE_DIRECTORY "${QISKIT_FORTRAN_ROOT}/modules")
+  include_directories("${QISKIT_FORTRAN_ROOT}/modules")
+  
+  # Setup RPATH for executables (resolve the pyO3 dependencies from build)
+  get_filename_component(QISKIT_LIB_DIR "${QISKIT_LIB}" DIRECTORY)
+  if(DEFINED ENV{CONDA_PREFIX})
+    set(PYTHON_LIB_DIR "$ENV{CONDA_PREFIX}/lib")
+    message(STATUS "Python lib dir (conda): ${PYTHON_LIB_DIR}")
+    set(CMAKE_BUILD_RPATH "${QISKIT_LIB_DIR};${PYTHON_LIB_DIR}")
+    set(CMAKE_INSTALL_RPATH "${QISKIT_LIB_DIR};${PYTHON_LIB_DIR}")
+  else()
+    find_package(Python3 COMPONENTS Interpreter QUIET)
+    if(Python3_FOUND)
+      execute_process(
+        COMMAND "${Python3_EXECUTABLE}" -c
+          "import sys, os; print(os.path.join(sys.prefix, 'lib'))"
+        OUTPUT_VARIABLE PYTHON_LIB_DIR
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+        ERROR_QUIET)
+      if(PYTHON_LIB_DIR)
+        message(STATUS "Python lib dir (system): ${PYTHON_LIB_DIR}")
+        set(CMAKE_BUILD_RPATH "${QISKIT_LIB_DIR};${PYTHON_LIB_DIR}")
+        set(CMAKE_INSTALL_RPATH "${QISKIT_LIB_DIR};${PYTHON_LIB_DIR}")
+      else()
+        set(CMAKE_BUILD_RPATH "${QISKIT_LIB_DIR}")
+        set(CMAKE_INSTALL_RPATH "${QISKIT_LIB_DIR}")
+      endif()
+    else()
+      set(CMAKE_BUILD_RPATH "${QISKIT_LIB_DIR}")
+      set(CMAKE_INSTALL_RPATH "${QISKIT_LIB_DIR}")
+    endif()
+  endif()
+  set(CMAKE_BUILD_WITH_INSTALL_RPATH OFF)
+endif()
+
+# ---------------------------------------------------------------------------
+# Subdirectories with their own CMakeLists.txt
+# ---------------------------------------------------------------------------
+if(NOT QISKIT_FORTRAN_ROOT STREQUAL "")
+  add_subdirectory(nuclear_dynamics)
+endif()
+
+# ---------------------------------------------------------------------------
 # Helper: list available applications
 # ---------------------------------------------------------------------------
 function(list_available_apps OUT_VAR)
@@ -44,7 +114,7 @@ function(list_available_apps OUT_VAR)
     foreach(_dir ${_dirs})
         if(IS_DIRECTORY "${_dir}")
             get_filename_component(_name "${_dir}" NAME)
-            if(EXISTS "${_dir}/${_name}.f90")
+            if(EXISTS "${_dir}/${_name}.f90" OR EXISTS "${_dir}/${_name}_test.f90")
                 list(APPEND _found "  ${_name}")
             endif()
         endif()
@@ -55,6 +125,13 @@ endfunction()
 # ---------------------------------------------------------------------------
 # Validate inputs
 # ---------------------------------------------------------------------------
+# Only validate if APP_NAME is provided (for standalone app builds)
+# If APP_NAME is not provided, only subdirectories will be built
+if(APP_NAME STREQUAL "")
+  # Building subdirectories only, skip standalone app build
+  return()
+endif()
+
 if(QISKIT_FORTRAN_ROOT STREQUAL "")
     message(FATAL_ERROR
         "QISKIT_FORTRAN_ROOT is not set.\n"
@@ -67,15 +144,12 @@ if(QISKIT_ROOT STREQUAL "")
         "Pass -DQISKIT_ROOT=/path/to/qiskit")
 endif()
 
-if(APP_NAME STREQUAL "")
-    list_available_apps(_apps)
-    message(FATAL_ERROR
-        "APP_NAME is not set. Pass -DAPP_NAME=<name>\n"
-        "Available applications:\n${_apps}")
-endif()
-
 set(_app_dir "${CMAKE_CURRENT_SOURCE_DIR}/${APP_NAME}")
 set(_app_src "${_app_dir}/${APP_NAME}.f90")
+# Test-only applications use <name>_test.f90 as source but keep the executable name
+if(NOT EXISTS "${_app_src}" AND EXISTS "${_app_dir}/${APP_NAME}_test.f90")
+    set(_app_src "${_app_dir}/${APP_NAME}_test.f90")
+endif()
 
 if(NOT IS_DIRECTORY "${_app_dir}")
     list_available_apps(_apps)
@@ -86,8 +160,8 @@ endif()
 
 if(NOT EXISTS "${_app_src}")
     message(FATAL_ERROR
-        "Source file not found: ${_app_src}\n"
-        "Convention: the main source file must match the directory name.")
+        "Source file not found: ${_app_src} (also tried ${_app_dir}/${APP_NAME}_test.f90)\n"
+        "Convention: the main source file must be <name>.f90 or <name>_test.f90.")
 endif()
 
 set(_modules_dir "${QISKIT_FORTRAN_ROOT}/modules")
