@@ -314,3 +314,33 @@ call filter_bitstrings(bitstrings, n_shots, n_qubits, ...)
 ```
 
 This pattern works with any quantum sampler (Aer, Runtime, custom).
+
+---
+
+## Parameter Sweep Driver
+
+The `nuclear_dynamics_driver` executable runs configurable parameter sweeps with optional IBM Runtime integration.
+
+**Build:**
+```bash
+cmake -B build \
+  -DQISKIT_FORTRAN_ROOT=../build \
+  -DQISKIT_ROOT=../qiskit \
+  -DQISKIT_RUNTIME_ROOT=../qiskit-ibm-runtime-c
+cmake --build build --target nuclear_dynamics_driver
+```
+
+**Usage:**
+```bash
+# Test mode (simulated bitstrings)
+./build/nuclear_dynamics/nuclear_dynamics_driver \
+  -n 8 --theta-min 0 --theta-max 1.6 -s 1024
+
+# IBM Runtime mode (requires credentials)
+./build/nuclear_dynamics/nuclear_dynamics_driver \
+  -n 8 --theta-min 0 --theta-max 1.6 -s 1024 --runtime
+```
+
+**Options:** `-n, --iterations NUM` (default 8) | `--theta-min/max VALUE` (default 0/1.6) | `-s, --shots NUM` (default 1024) | `-r, --runtime` (use IBM Quantum)
+
+Compares sweep results against j² oracle (4.2234 MeV). See `RUNTIME_USAGE.md` for details.
