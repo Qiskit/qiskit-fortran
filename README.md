@@ -2,6 +2,12 @@
 
 Fortran ISO_C_BINDING interface to the [Qiskit C API](https://docs.quantum.ibm.com/api/qiskit-c).
 
+> [!WARNING]
+> This project is **experimental and should not be considered stable**.  
+> It is under active development, and interfaces may change without notice between commits. If you are not directly involved in the development or testing, please proceed with caution.
+>
+> Feedback is welcome: please [open an issue](https://github.com/Qiskit/qiskit-fortran/issues/new/choose).
+
 Provides a two-layer binding that mirrors the architecture of
 [Qiskit.jl](https://github.com/Qiskit/Qiskit.jl) and
 [qiskit-cpp](https://github.com/Qiskit/qiskit-cpp):
