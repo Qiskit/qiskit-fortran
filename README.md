@@ -248,6 +248,6 @@ Output is in `docs/html/index.html`. The high-level API is documented with Fortr
 
 ## License
 
-[Apache License 2.0](https://github.com/Qiskit/qiskit-cpp/blob/main/LICENSE.txt)
+[Apache License 2.0](https://github.com/Qiskit/qiskit-fortran/blob/main/LICENSE.txt)
 
 ---
