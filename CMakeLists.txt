@@ -35,6 +35,10 @@ project(qiskit-fortran
 # ---------------------------------------------------------------------------
 option(QISKIT_FORTRAN_TESTS "Build and register the test suite" ON)
 option(USE_SWIG_BINDINGS "Use SWIG-generated bindings instead of manual bindings" OFF)
+option(QISKIT_FORTRAN_RUNTIME "Build the IBM Runtime binding (needs libqiskit_ibm_runtime)" OFF)
+
+set(QISKIT_RUNTIME_ROOT "" CACHE PATH
+  "Root of qiskit-ibm-runtime-c (needed when QISKIT_FORTRAN_RUNTIME is ON)")
 
 # ---------------------------------------------------------------------------
 # Locate the Qiskit C extension
@@ -64,6 +68,16 @@ find_path(QISKIT_INCLUDE_DIR
 message(STATUS "Qiskit library : ${QISKIT_LIB}")
 message(STATUS "Qiskit include : ${QISKIT_INCLUDE_DIR}")
 
+# Locate the IBM Runtime client (optional)
+if(QISKIT_FORTRAN_RUNTIME)
+  find_library(QISKIT_RUNTIME_LIB
+    NAMES qiskit_ibm_runtime
+    HINTS "${QISKIT_RUNTIME_ROOT}/build/cargo/release"
+          "${QISKIT_RUNTIME_ROOT}/build/cargo/debug"
+    REQUIRED)
+  message(STATUS "Runtime library: ${QISKIT_RUNTIME_LIB}")
+endif()
+
 # ---------------------------------------------------------------------------
 # SWIG Configuration (if enabled)
 # ---------------------------------------------------------------------------
@@ -89,14 +103,9 @@ if(USE_SWIG_BINDINGS)
   # Enable C for compiling the wrapper
   enable_language(C)
   
-  # Compile the pre-generated C wrapper
+  # Compile the pre-generated C wrapper (Fortran module handled separately below)
   add_library(qiskit_swig_wrapper OBJECT "${SWIG_OUTPUT_C}")
   target_include_directories(qiskit_swig_wrapper PRIVATE "${QISKIT_INCLUDE_DIR}")
-  
-  # Set the C API source files for SWIG build
-  # Use ONLY the SWIG-generated qiskit_swigf.f90 which contains all types, enums and interfaces
-  set(QISKIT_C_API_SOURCES "${SWIG_OUTPUT_F90}")
-  set(QISKIT_EXTRA_OBJECTS $<TARGET_OBJECTS:qiskit_swig_wrapper>)
 else()
   message(STATUS "Using hand-written bindings")
 
@@ -139,20 +148,97 @@ endif()
 # Source order matters for Fortran — modules must be compiled before their
 # dependents. Dependency chain:
 #   - Manual: qiskit_c_api_types, qiskit_c_api_circuit -> qiskit_utils, qiskit_circuit
-#   - SWIG:   qiskit_swig_api -> qiskit_utils, qiskit_circuit
+#   - SWIG:   qiskit_swigf -> qiskit_utils, qiskit_circuit, qiskit_target, qiskit_transpiler, qiskit
 #   - Both:   qiskit_circuit -> qiskit
-# ---------------------------------------------------------------------------
-add_library(qiskit-fortran STATIC
-  ${QISKIT_C_API_SOURCES}
-  src/qiskit_utils.f90
-  src/qiskit_circuit.f90
-  src/qiskit.f90
-  ${QISKIT_EXTRA_OBJECTS})
+#
+# All .mod files go to a single known directory so every target can find them.
+set(CMAKE_Fortran_MODULE_DIRECTORY "${CMAKE_BINARY_DIR}/modules")
 
-# Must be set before any source in this target is compiled so the Fortran
-# scanner resolves intra-target USE statements (e.g. qiskit_utils -> qiskit_swigf).
-set_target_properties(qiskit-fortran PROPERTIES
-  Fortran_MODULE_DIRECTORY "${CMAKE_BINARY_DIR}/modules")
+# flang does not implement CMake's intra-target Fortran module dependency
+# protocol, so parallel builds race on USE statements within a single
+# add_library call. Fix: compile each layer as its own OBJECT library so
+# CMake's inter-target dependency ordering provides the serialisation barrier.
+#
+# Layer order (SWIG path):
+#   L0: qiskit_swigf       (SWIG-generated, no deps)
+#   L1: qiskit_utils       (USE L0)
+#   L2: qiskit_circuit     (USE L1)
+#   L3: qiskit_target      (USE L1; qk_target_* imported locally per procedure)
+#   L4: qiskit_transpiler  (USE L2, L3; same local-import pattern)
+#   L5: qiskit             (USE L2, L3, L4)
+#
+# qiskit_target and qiskit_transpiler are SWIG-only (no manual C API equivalents yet).
+# Manual path uses a single add_library; gfortran's scanner handles ordering.
+
+macro(fortran_layer NAME)
+  add_library(${NAME} OBJECT ${ARGN})
+  set_target_properties(${NAME} PROPERTIES
+    Fortran_MODULE_DIRECTORY "${CMAKE_BINARY_DIR}/modules")
+  target_include_directories(${NAME}
+    PRIVATE "${QISKIT_INCLUDE_DIR}"
+    PRIVATE "${CMAKE_BINARY_DIR}/modules")
+  target_compile_options(${NAME} PRIVATE
+    $<$<COMPILE_LANGUAGE:Fortran>:-cpp>
+    $<$<COMPILE_LANGUAGE:Fortran>:-DUSE_SWIG_BINDINGS>)
+endmacro()
+
+if(USE_SWIG_BINDINGS)
+  fortran_layer(qk_layer0 "${SWIG_OUTPUT_F90}")
+  fortran_layer(qk_layer1 src/qiskit_utils.f90)
+  fortran_layer(qk_layer2 src/qiskit_circuit.f90)
+  fortran_layer(qk_layer3 src/qiskit_target.f90)
+  fortran_layer(qk_layer4 src/qiskit_transpiler.f90)
+  fortran_layer(qk_layer5 src/qiskit.f90)
+
+  add_dependencies(qk_layer1 qk_layer0)
+  add_dependencies(qk_layer2 qk_layer1)
+  add_dependencies(qk_layer3 qk_layer1)
+  add_dependencies(qk_layer4 qk_layer2 qk_layer3)
+  add_dependencies(qk_layer5 qk_layer4)
+
+  set(QISKIT_C_API_SOURCES "")
+  set(QISKIT_EXTRA_OBJECTS
+    $<TARGET_OBJECTS:qiskit_swig_wrapper>
+    $<TARGET_OBJECTS:qk_layer0>
+    $<TARGET_OBJECTS:qk_layer1>
+    $<TARGET_OBJECTS:qk_layer2>
+    $<TARGET_OBJECTS:qk_layer3>
+    $<TARGET_OBJECTS:qk_layer4>
+    $<TARGET_OBJECTS:qk_layer5>)
+
+  # Add runtime layers if runtime is enabled
+  if(QISKIT_FORTRAN_RUNTIME)
+    fortran_layer(qk_layer_rt_api src/qiskit_c_api_runtime.f90)
+    fortran_layer(qk_layer_rt src/qiskit_runtime.f90)
+    add_dependencies(qk_layer_rt_api qk_layer0)
+    add_dependencies(qk_layer_rt qk_layer_rt_api qk_layer2)
+    list(APPEND QISKIT_EXTRA_OBJECTS
+      $<TARGET_OBJECTS:qk_layer_rt_api>
+      $<TARGET_OBJECTS:qk_layer_rt>)
+  endif()
+endif()
+
+# Library: qiskit-fortran
+# ---------------------------------------------------------------------------
+if(USE_SWIG_BINDINGS)
+  # All Fortran sources compiled as layered OBJECT libs above; just bundle objects.
+  add_library(qiskit-fortran STATIC ${QISKIT_EXTRA_OBJECTS})
+  add_dependencies(qiskit-fortran qk_layer5 qiskit_swig_wrapper)
+else()
+  set(QISKIT_FORTRAN_SOURCES
+    ${QISKIT_C_API_SOURCES}
+    src/qiskit_utils.f90
+    src/qiskit_circuit.f90
+    src/qiskit.f90)
+
+  if(QISKIT_FORTRAN_RUNTIME)
+    list(APPEND QISKIT_FORTRAN_SOURCES
+      src/qiskit_c_api_runtime.f90
+      src/qiskit_runtime.f90)
+  endif()
+
+  add_library(qiskit-fortran STATIC ${QISKIT_FORTRAN_SOURCES})
+endif()
 
 target_include_directories(qiskit-fortran
   PRIVATE "${QISKIT_INCLUDE_DIR}"
@@ -161,10 +247,14 @@ target_include_directories(qiskit-fortran
 target_link_libraries(qiskit-fortran
   PUBLIC "${QISKIT_LIB}")
 
-# Add dependency on SWIG wrapper if using SWIG bindings
-if(USE_SWIG_BINDINGS)
-  add_dependencies(qiskit-fortran qiskit_swig_wrapper)
+if(QISKIT_FORTRAN_RUNTIME)
+  target_link_libraries(qiskit-fortran PUBLIC "${QISKIT_RUNTIME_LIB}")
 endif()
+
+# Place generated .mod files in a dedicated directory so downstream
+# projects can find them with a single -I flag.
+set_target_properties(qiskit-fortran PROPERTIES
+  Fortran_MODULE_DIRECTORY "${CMAKE_BINARY_DIR}/modules")
 
 # ---------------------------------------------------------------------------
 # Test executable
@@ -217,7 +307,36 @@ if(QISKIT_FORTRAN_TESTS)
     COMMENT "Running test_qiskit"
     VERBATIM)
 
-  add_custom_target(test DEPENDS run_test)
+  set(RUN_TARGETS run_test)
+
+  # Runtime binding test (hardware-free, but links libqiskit_ibm_runtime)
+  if(QISKIT_FORTRAN_RUNTIME)
+    add_executable(test_runtime test/test_runtime.f90)
+    target_link_libraries(test_runtime PRIVATE qiskit-fortran)
+    target_include_directories(test_runtime PRIVATE "${CMAKE_BINARY_DIR}/modules")
+    add_dependencies(test_runtime qiskit-fortran)
+
+    get_filename_component(QISKIT_RUNTIME_LIB_DIR "${QISKIT_RUNTIME_LIB}" DIRECTORY)
+    if(PYTHON_LIB_DIR)
+      set(RUNTIME_RPATH "${QISKIT_LIB_DIR};${QISKIT_RUNTIME_LIB_DIR};${PYTHON_LIB_DIR}")
+    else()
+      set(RUNTIME_RPATH "${QISKIT_LIB_DIR};${QISKIT_RUNTIME_LIB_DIR}")
+    endif()
+    set_target_properties(test_runtime PROPERTIES
+      BUILD_RPATH   "${RUNTIME_RPATH}"
+      INSTALL_RPATH "${RUNTIME_RPATH}"
+      BUILD_WITH_INSTALL_RPATH OFF)
+
+    add_custom_target(run_test_runtime
+      COMMAND $<TARGET_FILE:test_runtime>
+      DEPENDS test_runtime
+      WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+      COMMENT "Running test_runtime"
+      VERBATIM)
+    list(APPEND RUN_TARGETS run_test_runtime)
+  endif()
+
+  add_custom_target(test DEPENDS ${RUN_TARGETS})
 endif()
 
 # ---------------------------------------------------------------------------

@@ -33,6 +33,7 @@ project(qiskit-fortran-applications LANGUAGES Fortran)
 set(APP_NAME            "" CACHE STRING "Application to build")
 set(QISKIT_FORTRAN_ROOT "" CACHE PATH   "Path to qiskit-fortran build directory")
 set(QISKIT_ROOT         "" CACHE PATH   "Path to Qiskit repository")
+set(QISKIT_RUNTIME_ROOT "" CACHE PATH   "Path to qiskit-ibm-runtime-c (apps using the runtime binding)")
 
 # ---------------------------------------------------------------------------
 # Helper: list available applications
@@ -110,6 +111,16 @@ find_library(QISKIT_LIB
           "${QISKIT_ROOT}/target/release"
     REQUIRED)
 
+# Optional: the IBM Runtime client, for apps using the runtime binding
+if(NOT QISKIT_RUNTIME_ROOT STREQUAL "")
+    find_library(QISKIT_RUNTIME_LIB
+        NAMES qiskit_ibm_runtime
+        HINTS "${QISKIT_RUNTIME_ROOT}/build/cargo/release"
+              "${QISKIT_RUNTIME_ROOT}/build/cargo/debug"
+        REQUIRED)
+    message(STATUS "Runtime lib          : ${QISKIT_RUNTIME_LIB}")
+endif()
+
 message(STATUS "Application          : ${APP_NAME}")
 message(STATUS "Source               : ${_app_src}")
 message(STATUS "qiskit-fortran lib   : ${QISKIT_FORTRAN_LIB}")
@@ -137,10 +148,13 @@ else()
     endif()
 endif()
 
+set(_rpath "${_qiskit_lib_dir}")
+if(QISKIT_RUNTIME_LIB)
+    get_filename_component(_runtime_lib_dir "${QISKIT_RUNTIME_LIB}" DIRECTORY)
+    set(_rpath "${_rpath};${_runtime_lib_dir}")
+endif()
 if(_python_lib_dir)
-    set(_rpath "${_qiskit_lib_dir};${_python_lib_dir}")
-else()
-    set(_rpath "${_qiskit_lib_dir}")
+    set(_rpath "${_rpath};${_python_lib_dir}")
 endif()
 
 # ---------------------------------------------------------------------------
@@ -165,6 +179,10 @@ add_executable(${APP_NAME} "${_app_src}")
 target_link_libraries(${APP_NAME} PRIVATE
     "${QISKIT_FORTRAN_LIB}"
     "${QISKIT_LIB}")
+
+if(QISKIT_RUNTIME_LIB)
+    target_link_libraries(${APP_NAME} PRIVATE "${QISKIT_RUNTIME_LIB}")
+endif()
 
 target_include_directories(${APP_NAME} PRIVATE
     "${_modules_dir}")
