@@ -174,9 +174,6 @@ contains
             end block
         end if
         
-        print *, "Initialized CG table with", n_cg_entries, "entries"
-        print *, "Maximum j =", real(j_max_2)/2.0d0
-        
     end subroutine init_cg_tables
 
     ! Subroutine: compute_cg_coefficient
@@ -210,7 +207,7 @@ contains
         end if
 
         ! Parity check: j1_2 + j2_2 + j_2 must be even (integer/half-integer
-        ! consistency — same criterion as in check_triangle_inequality).
+        ! consistency; same criterion as in check_triangle_inequality).
         if (mod(j1_2 + j2_2 + j_2, 2) /= 0) then
             is_valid = .false.
             cg_value = 0.0d0
@@ -351,27 +348,27 @@ contains
         m = real(m_2, c_double) / 2.0d0
         
         if (j_2 == j1_2 + 1) then
-            ! J = j1 + 1/2
+            ! J = j1 + 1/2.  Formulas (Edmonds 3.7.7):
+            !   m2=+1/2: CG = +sqrt((j1+m1+1)/(2j1+1))
+            !   m2=-1/2: CG = +sqrt((j1-m1+1)/(2j1+1))
             if (m2_2 == 1) then
-                ! m2 = +1/2
                 factor = (j1 + m1 + 1.0d0) / (2.0d0 * j1 + 1.0d0)
                 cg_value = sqrt(factor)
             else if (m2_2 == -1) then
-                ! m2 = -1/2
-                factor = (j1 - m1) / (2.0d0 * j1 + 1.0d0)
+                factor = (j1 - m1 + 1.0d0) / (2.0d0 * j1 + 1.0d0)
                 cg_value = sqrt(factor)
             else
                 cg_value = 0.0d0
             end if
         else if (j_2 == j1_2 - 1) then
-            ! J = j1 - 1/2
+            ! J = j1 - 1/2.  Formulas (Edmonds 3.7.7):
+            !   m2=+1/2: CG = -sqrt((j1-m1)/(2j1+1))
+            !   m2=-1/2: CG = +sqrt((j1+m1)/(2j1+1))
             if (m2_2 == 1) then
-                ! m2 = +1/2
                 factor = (j1 - m1) / (2.0d0 * j1 + 1.0d0)
                 cg_value = -sqrt(factor)
             else if (m2_2 == -1) then
-                ! m2 = -1/2
-                factor = (j1 + m1 + 1.0d0) / (2.0d0 * j1 + 1.0d0)
+                factor = (j1 + m1) / (2.0d0 * j1 + 1.0d0)
                 cg_value = sqrt(factor)
             else
                 cg_value = 0.0d0
@@ -560,9 +557,6 @@ contains
 
         deallocate(temp_pairs)
 
-        print *, "Filtered excitations:", filtered_size, "/", pool_size
-        print *, "Reduction factor:", real(pool_size) / real(max(filtered_size, 1))
-
     end subroutine filter_excitations_by_j
 
     ! Function: get_j_from_orbital
@@ -661,7 +655,6 @@ contains
         if (allocated(cg_table)) deallocate(cg_table)
         n_cg_entries = 0
         j_max_2_stored = 0
-        print *, "CG tables cleaned up"
     end subroutine cleanup_cg_tables
 
 end module clebsch_gordan

@@ -65,7 +65,6 @@ module gsl_interface
     
 contains
 
-    !---------------------------------------------------------------------------
     ! Function: gsl_is_available
     !
     ! Description:
@@ -74,7 +73,6 @@ contains
     !
     ! Returns:
     !   .true. if GSL is available, .false. otherwise
-    !---------------------------------------------------------------------------
     function gsl_is_available() result(available)
         logical :: available
 #ifdef USE_GSL
@@ -215,7 +213,7 @@ contains
         end if
         
         ! Compute phase factor: (-1)^(j1-j2-m)
-        ! Since j and m are stored as 2×value, we need (j1_2 - j2_2 - m_2)/2
+        ! Since j and m are stored as 2×value, we need (j1_2; j2_2; m_2)/2
         phase_exponent = (j1_2 - j2_2 - m_2) / 2
         
         ! Handle the phase

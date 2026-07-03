@@ -27,7 +27,7 @@
 !>   TBMEs <ab;J|V|cd;J> are in the J-coupled basis. Mapping to qubit
 !>   bitstrings requires a Pandya transform into the m-scheme basis where each
 !>   qubit is a single (n,l,j,m_j,tz) orbital, this is done in a separate
-!>   module (future: sqd_transform.f90).
+!>   module (future: subspace_transform.f90).
 module usdb_reader
   implicit none
   private
@@ -82,9 +82,8 @@ contains
     integer, parameter :: U = 42
     character(len=512) :: line
     integer            :: ios, i
-    integer            :: n_spe_hdr, spe_method
-    integer            :: n_tbme_hdr, tbme_method
-    real(8)            :: hbar_omega
+    integer            :: n_spe_hdr, n_tbme_hdr, dummy_int
+    real(8)            :: dummy_real
     integer            :: orb_i, orb_j
 
     status = 0
@@ -122,7 +121,7 @@ contains
     ! SPE header  (e.g. "6  0")
     call next_noncomment(U, line, ios)
     if (ios /= 0) then; status = -4; close(U); return; end if
-    read(line, *, iostat=ios) n_spe_hdr, spe_method
+    read(line, *, iostat=ios) n_spe_hdr
     if (ios /= 0) then
       write(*,'(a,a)') "usdb_reader: bad SPE header: ", trim(line)
       status = 3; close(U); return
@@ -144,13 +143,14 @@ contains
     ! TBME header  ("n  method  hbar_omega  core_energy")
     call next_noncomment(U, line, ios)
     if (ios /= 0) then; status = -6; close(U); return; end if
-    read(line, *, iostat=ios) n_tbme_hdr, tbme_method, hbar_omega, ms%core_energy
+    read(line, *, iostat=ios) n_tbme_hdr, dummy_int, dummy_real, ms%core_energy
     if (ios /= 0) then
       write(*,'(a,a)') "usdb_reader: bad TBME header: ", trim(line)
       status = 5; close(U); return
     end if
 
     ! TBME values  ("a  b  c  d  J  value")
+    ms%n_tbme = n_tbme_hdr
     allocate(ms%tbmes(ms%n_tbme))
     do i = 1, ms%n_tbme
       call next_noncomment(U, line, ios)

@@ -11,9 +11,11 @@
 # that they have been altered from the originals.
 
 # =============================================================================
-# Nuclear SQD Application
+# Nuclear Subspace Diagonalization Application
 #
-# Builds the  nuclear_dynamics modules as a library and the test program.
+# Builds nuclear_dynamics_lib (physics + ansatz + driver) and three test
+# executables: test_exact_solver, test_usdb_reader, nuclear_dynamics_driver.
+# nuclear_dynamics_parallel is built only when coarray support is detected.
 # =============================================================================
 
 # Find LAPACK for exact_solver.f90 (dsyev routine)
@@ -25,6 +27,25 @@ if(APPLE)
 else()
     find_package(LAPACK REQUIRED)
     message(STATUS "Using LAPACK libraries: ${LAPACK_LIBRARIES}")
+endif()
+
+# Find OpenMP for parallel Hamiltonian build (build_sd_hamiltonian inner loop).
+# CMake's FindOpenMP does not auto-detect flang's flags on macOS; we probe manually.
+find_package(OpenMP)
+if(NOT OpenMP_Fortran_FOUND)
+    # Homebrew flang requires -fopenmp + explicit libomp path
+    set(_LIBOMP_HINT "/opt/homebrew/opt/libomp/lib")
+    find_library(_LIBOMP_LIB NAMES omp HINTS "${_LIBOMP_HINT}" NO_DEFAULT_PATH)
+    if(_LIBOMP_LIB)
+        set(FLANG_OPENMP_FLAGS "-fopenmp")
+        set(FLANG_OPENMP_LIBS  "-L${_LIBOMP_HINT}" "${_LIBOMP_LIB}")
+        set(OpenMP_Fortran_FOUND TRUE)
+        message(STATUS "Flang OpenMP: ${_LIBOMP_LIB} — parallel Hamiltonian build enabled")
+    else()
+        message(STATUS "OpenMP not found — Hamiltonian build will be serial")
+    endif()
+else()
+    message(STATUS "OpenMP found (CMake) — parallel Hamiltonian build enabled")
 endif()
 
 # Find runtime library (optional, for nuclear_dynamics_driver)
@@ -85,7 +106,6 @@ add_library(nuclear_dynamics_lib
     physics/gsl_interface.f90
     physics/exact_solver.f90
     physics/symmetry_filter.f90
-    physics/sweep_comparison.f90
     circuit/nuclear_ansatz.f90
     circuit/nuclear_dynamics_driver.f90
 )
@@ -103,6 +123,17 @@ target_link_libraries(nuclear_dynamics_lib PRIVATE
     ${LAPACK_LIBRARIES}
 )
 
+# Add OpenMP support if available (parallel Hamiltonian build)
+if(OpenMP_Fortran_FOUND)
+    if(TARGET OpenMP::OpenMP_Fortran)
+        target_link_libraries(nuclear_dynamics_lib PRIVATE OpenMP::OpenMP_Fortran)
+        target_compile_options(nuclear_dynamics_lib PRIVATE ${OpenMP_Fortran_FLAGS})
+    elseif(DEFINED FLANG_OPENMP_FLAGS)
+        target_compile_options(nuclear_dynamics_lib PRIVATE ${FLANG_OPENMP_FLAGS})
+        target_link_libraries(nuclear_dynamics_lib PRIVATE ${FLANG_OPENMP_LIBS})
+    endif()
+endif()
+
 # Add GSL support if available
 if(GSL_FOUND)
     target_compile_definitions(nuclear_dynamics_lib PRIVATE USE_GSL)
@@ -112,66 +143,6 @@ if(GSL_FOUND)
     else()
         target_link_libraries(nuclear_dynamics_lib PRIVATE ${GSL_LIBRARIES})
     endif()
-endif()
-
-# Build test program
-add_executable(nuclear_dynamics
-    tests/nuclear_dynamics_test.f90
-)
-
-target_link_libraries(nuclear_dynamics
-    nuclear_dynamics_lib
-)
-
-target_include_directories(nuclear_dynamics PRIVATE
-    ${CMAKE_BINARY_DIR}/modules
-)
-
-if(CMAKE_BUILD_RPATH)
-    set_target_properties(nuclear_dynamics PROPERTIES
-        BUILD_RPATH "${CMAKE_BUILD_RPATH}"
-        INSTALL_RPATH "${CMAKE_INSTALL_RPATH}"
-        BUILD_WITH_INSTALL_RPATH OFF)
-endif()
-
-# Build USDB reader test program
-add_executable(test_usdb_reader
-    tests/test_usdb_reader.f90
-)
-
-target_link_libraries(test_usdb_reader
-    nuclear_dynamics_lib
-)
-
-target_include_directories(test_usdb_reader PRIVATE
-    ${CMAKE_BINARY_DIR}/modules
-)
-
-if(CMAKE_BUILD_RPATH)
-    set_target_properties(test_usdb_reader PROPERTIES
-        BUILD_RPATH "${CMAKE_BUILD_RPATH}"
-        INSTALL_RPATH "${CMAKE_INSTALL_RPATH}"
-        BUILD_WITH_INSTALL_RPATH OFF)
-endif()
-
-# Build exact solver test program
-add_executable(test_exact_solver
-    tests/test_exact_solver.f90
-)
-
-target_link_libraries(test_exact_solver
-    nuclear_dynamics_lib
-)
-
-target_include_directories(test_exact_solver PRIVATE
-    ${CMAKE_BINARY_DIR}/modules
-)
-
-if(CMAKE_BUILD_RPATH)
-    set_target_properties(test_exact_solver PROPERTIES
-        BUILD_RPATH "${CMAKE_BUILD_RPATH}"
-        INSTALL_RPATH "${CMAKE_INSTALL_RPATH}"
-        BUILD_WITH_INSTALL_RPATH OFF)
 endif()
 
 # Build nuclear_dynamics_driver executable (with runtime support)
@@ -228,12 +199,12 @@ else()
     message(STATUS "Coarray support not detected — skipping nuclear_dynamics_parallel")
 endif()
 
-# Make USDB.snt available beside the test executables in the build tree.
+# Make USDB.snt available beside the driver in the build tree.
 configure_file(${CMAKE_CURRENT_SOURCE_DIR}/data/USDB.snt
                ${CMAKE_CURRENT_BINARY_DIR}/USDB.snt
                COPYONLY)
 
 # Installation
-install(TARGETS  nuclear_dynamics test_exact_solver nuclear_dynamics_driver
+install(TARGETS nuclear_dynamics_driver
     RUNTIME DESTINATION bin
 )

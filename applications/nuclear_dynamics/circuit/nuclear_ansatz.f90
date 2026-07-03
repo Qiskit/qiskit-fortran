@@ -72,7 +72,7 @@ contains
 
     ! Populate the registry with the HF occupation pattern for this system.
     ! init_registry_sd_shell marks the first n_protons proton qubits and first
-    ! n_neutrons neutron qubits as occupied — the canonical sd-shell HF state.
+    ! n_neutrons neutron qubits as occupied; the canonical sd-shell HF state.
     call init_registry_sd_shell(n_protons, n_neutrons)
 
     call circuit%init(n_qubits, n_qubits)
@@ -167,23 +167,12 @@ contains
     ! This decomposition ensures particle number is conserved by only mixing
     ! |01⟩ <-> |10⟩ states while leaving |00⟩ and |11⟩ unchanged.
     
-    ! Step 1: CNOT(b->a) - First basis change
-    call circuit%cx(qubit_b, qubit_a)
-    
-    ! Step 2: RY(θ/2) on qubit_b - First half of controlled rotation
-    call circuit%ry(theta / 2.0_c_double, qubit_b)
-    
-    ! Step 3: CNOT(a->b) - Entangling operation
-    call circuit%cx(qubit_a, qubit_b)
-    
-    ! Step 4: RY(-θ/2) on qubit_b - Second half of controlled rotation
-    call circuit%ry(-theta / 2.0_c_double, qubit_b)
-    
-    ! Step 5: CNOT(a->b) - Disentangling operation
-    call circuit%cx(qubit_a, qubit_b)
-    
-    ! Step 6: CNOT(b->a) - Final basis change
-    call circuit%cx(qubit_b, qubit_a)
+    call circuit%cx(qubit_b, qubit_a)                      ! 1. basis change
+    call circuit%ry(theta / 2.0_c_double, qubit_b)        ! 2. first half-rotation
+    call circuit%cx(qubit_a, qubit_b)                      ! 3. entangle
+    call circuit%ry(-theta / 2.0_c_double, qubit_b)       ! 4. second half-rotation
+    call circuit%cx(qubit_a, qubit_b)                      ! 5. disentangle
+    call circuit%cx(qubit_b, qubit_a)                      ! 6. restore basis
     
   end subroutine add_adapt_layer
 
@@ -191,8 +180,8 @@ contains
   !>
   !> Enumerates all valid particle-hole excitation pairs. The caller is expected
   !> to pass the result through filter_excitations_by_j (clebsch_gordan) before
-  !> building the circuit, reducing the 64-pair full pool to the 16 J=0-coupled
-  !> pairs used in the fixed ansatz.
+  !> building the circuit, reducing the 40-pair full pool to the 16 J=0-coupled
+  !> pairs used in the fixed ansatz (confirmed at runtime for 2p+2n sd-shell).
   !>
   !> Excitation rules:
   !>   - Proton excitations: occupied proton orbitals -> virtual proton orbitals
@@ -221,7 +210,7 @@ contains
     if (n_protons + n_neutrons > n_qubits) &
       error stop "[nuclear_ansatz] create_ph_excitation_pool: n_protons + n_neutrons > n_qubits"
 
-    ! Registry must be initialised before this call — create_hf_reference does that.
+    ! Registry must be initialised before this call; create_hf_reference does that.
     ! Pull hole/virtual index lists from the single source of truth.
     call reg_proton_holes(p_holes, n_ph)
     call reg_proton_virtuals(p_virts, n_pv)

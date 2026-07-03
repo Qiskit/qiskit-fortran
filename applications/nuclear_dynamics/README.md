@@ -1,346 +1,194 @@
 # nuclear_dynamics
 
-Fortran oracle pipeline for post-processing quantum samples in nuclear structure.
-Designed as a **supporting backend** for variational algorithms (VQE, SQD, ADAPT):
-given bitstrings from any quantum sampler, filters by nuclear symmetries and
-evaluates ground state energy via exact diagonalization. Can be appended to any
-sampling loop that produces bitstrings.
+Fortran application for nuclear subspace diagonalization using IBM Qiskit Runtime.
+Given a nucleus specified by valence proton and neutron counts, it builds a
+Givens-rotation ansatz circuit, samples bitstrings from IBM hardware, filters
+them by exact nuclear symmetries, constructs the restricted Hamiltonian, and
+diagonalizes it to obtain the subspace ground-state energy.
+
+Changing the nucleus is a single flag change (`--protons P --neutrons N`); all
+orbital registry, circuit construction, symmetry filter targets, and oracle
+energies adjust automatically at runtime from `USDB.snt`.
 
 ---
 
-## Purpose: Oracle Backend for Variational Pipelines
+## Quick start
 
-This is **not** a standalone algorithm. Rather, it's a **classical post-processing backend**
-that any quantum sampling algorithm (VQE, SQD, ADAPT) can call after generating bitstrings:
+```bash
+cd build/nuclear_dynamics
 
+# 20Ne  (2 valence protons + 2 valence neutrons, sd-shell, dim=640 oracle)
+./nuclear_dynamics_driver --runtime --protons 2 --neutrons 2 --iterations 12 --shots 4096
+
+# 22Ne  (2 valence protons + 4 valence neutrons, dim=4206 oracle)
+./nuclear_dynamics_driver --runtime --protons 2 --neutrons 4 --iterations 12 --shots 4096
+
+# 22Mg  (4 valence protons + 2 valence neutrons, dim=4206 oracle — isospin mirror of 22Ne)
+./nuclear_dynamics_driver --runtime --protons 4 --neutrons 2 --iterations 12 --shots 4096
 ```
-Quantum Sampler (VQE/SQD/ADAPT/etc)
-         | (bitstrings)
-   nuclear_dynamics oracle:
-     1. filter_bitstrings(N, Z, Jz, parity) — symmetry post-selection
-     2. build_j2_hamiltonian_complex() — classical matrix from USDB
-     3. diagonalize_exact_complex() — LAPACK zheev
-         | (subspace ground state energy)
-   Back to variational loop
-```
 
-This pipeline differs from existing work in three ways:
-
-**1. Fortran-native backend with standard nuclear data.**
-All classical components (symmetry filter, exact solver) are `bind(C)` Fortran. `usdb_reader` parses `.snt` format directly;
-no transcription of two-body matrix elements. Reuses established Fortran nuclear physics
-infrastructure.
-
-**2. Symmetry-aware subspace diagonalization.**
-`filter_bitstrings` enforces exact (N, Z, Jz, parity) constraints on each shot before
-classical diagonalization. This reduces classical CPU cost and eliminates symmetry noise
-from quantum samples. Applicable to any variational loop.
-
-**3. j² oracle for validation.**
-The j² pairing toy model (0d5/2², dim=15) serves as built-in ground truth. Sampled
-energies from any variational algorithm can be compared against exact oracle before
-scaling to full sd-shell (24 qubits). Demonstrates proof-of-concept at a controlled scale.
+IBM Runtime credentials must be set as environment variables
+`QISKIT_IBM_TOKEN` and `QISKIT_IBM_CHANNEL`.
 
 ---
 
-**Integration pattern:** Any quantum sampling algorithm can call this oracle in its
-classical update loop. Given a batch of bitstrings, the oracle returns a symmetry-filtered,
-classically-diagonalized ground state energy. This is pluggable into VQE energy evaluators,
-SQD gradient computations, ADAPT operator selection, or any hybrid loop that needs subspace
-ground states from noisy quantum samples.
+## Classical post-processing on saved bitstrings
+
+After a Runtime run, Fortran dumps `bitstrings_stepNN.txt` beside the binary.
+To re-run only classical post-processing on those files (no QPU connection):
+
+```bash
+./nuclear_dynamics_driver --bitstrings-dir /path/to/bitstrings_dir \
+    --protons 2 --neutrons 2
+```
+
+The Python baseline (in `build/benchmark/`) mirrors the same pipeline and
+processes the identical saved files, enabling apples-to-apples timing comparison:
+
+```bash
+python3 build/benchmark/nuclear_dynamics_baseline.py \
+    --bitstrings-dir /path/to/bitstrings_dir \
+    --protons 2 --neutrons 2 --ham-workers -1
+```
 
 ---
 
-## Oracle Interface
+## Driver flags
 
-Any variational algorithm (VQE, SQD, ADAPT) calls this two-step interface:
+| Flag | Default | Description |
+|------|---------|-------------|
+| `-p, --protons NUM` | 2 | valence protons (changes nucleus) |
+| `-q, --neutrons NUM` | 2 | valence neutrons (changes nucleus) |
+| `-n, --iterations NUM` | 15 | theta steps; stops early on convergence |
+| `-s, --shots NUM` | 1024 | shots per step |
+| `--theta-min/max VALUE` | 0 / π | ansatz parameter sweep range |
+| `-r, --runtime` | off | submit circuits via IBM Runtime |
+| `--bitstrings-dir DIR` | — | load pre-dumped bitstrings, skip QPU |
+| `--start-step N` | 1 | resume sweep from step N (skip earlier steps) |
 
-```fortran
-! Step 1: Your algorithm generates bitstrings (via Aer/Runtime)
-character(c_char), allocatable :: bitstrings(:,:)
+---
 
-! Step 2: Call nuclear_dynamics oracle
-call evaluate_subspace_energy(bitstrings, n_qubits, n_protons, n_neutrons, &
-                             E_subspace, eigenvalues, ierr)
+## Algorithm: nuclear subspace diagonalization
 
-! Use E_subspace in your variational loop
+```
+FOR each theta_i in [theta_min, theta_max]:
+  1. Build ansatz: HF reference + CG-filtered Givens rotation layers (16 pairs)
+  2. Submit to IBM Runtime Sampler (shots per step)
+  3. filter_bitstrings: keep shots satisfying (N, Z, Mj=0, even parity)
+  4. build_subspace_hamiltonian: H restricted to unique surviving Slater determinants
+  5. diagonalize_exact_complex: LAPACK zheev on subspace H
+  6. E_sub(theta_i) = lowest eigenvalue  [variational upper bound: E_sub >= E_oracle]
+END FOR
 ```
 
-The oracle handles:
-- Symmetry post-selection by (N, Z, Jz, parity)
-- Hamiltonian matrix construction from USDB
-- Exact diagonalization via LAPACK
-- Returns ground state energy and full spectrum
+The subspace dimension is typically 16–28 at 4096 shots (1–5% filter pass rate).
+The subspace energy is a strict variational upper bound unconditionally.
+
+---
+
+## Switching nuclei
+
+All per-nucleus quantities are derived at runtime from `USDB.snt` and
+`--protons`/`--neutrons`. There is no per-nucleus configuration needed:
+
+| What adjusts automatically | How |
+|---|---|
+| Number of qubits (24 for all sd-shell) | `init_registry_sd_shell(P, N)` |
+| HF reference occupation | `create_hf_reference` fills lowest-SPE 0d5/2 first |
+| Excitation pool size (40→16 or 52→16) | `filter_excitations_by_j(J=0)` |
+| Symmetry filter targets (N, Z) | passed as `--protons`/`--neutrons` arguments |
+| Oracle energy for convergence reporting | hard-coded per (P,N) in the driver |
+
+Currently supported nuclei (all use the same 24-qubit sd-shell basis):
+
+| Nucleus | `--protons` | `--neutrons` | Oracle E₀ (MeV) | Full-CI dim |
+|---------|-------------|--------------|-----------------|-------------|
+| ²⁰Ne | 2 | 2 | −39.145050266 | 640 |
+| ²²Ne | 2 | 4 | −55.273041038 | 4206 |
+| ²²Mg | 4 | 2 | −55.273041038 | 4206 |
+
+Adding a new sd-shell nucleus (e.g. ²⁴Mg, 4p+4n) requires only adding its oracle
+energy to the driver's lookup table and verifying the USDB.snt covers its TBMEs.
+To compute the oracle energy offline, call `build_sd_hamiltonian` + `diagonalize_exact_complex`
+from `exact_solver.f90` with the desired proton/neutron counts — the lowest eigenvalue is E₀.
+
+---
+
+## Build
+
+```bash
+cmake -B build \
+  -DQISKIT_FORTRAN_ROOT=/path/to/fortran-trials/build \
+  -DQISKIT_ROOT=/path/to/qiskit \
+  -DQISKIT_RUNTIME_ROOT=/path/to/qiskit-ibm-runtime-c
+cmake --build build
+```
+
+**Dependencies:**
+- **LAPACK** — required for `diagonalize_exact_complex`. macOS: Accelerate (automatic). Linux: system LAPACK.
+- **OpenMP** — for parallel H-build (`COLLAPSE(2)`) and symmetry filter. Detected automatically by CMake.
+- **GSL** (optional) — `brew install gsl`. Improves CG accuracy for j > 5/2; not needed for sd-shell.
+- **qiskit-ibm-runtime-c** — required for `--runtime` mode.
 
 ---
 
 ## Modules
 
 ### `nuclear_ansatz.f90`
-Builds the quantum circuit ansatz for nuclear structure calculations.
+Builds the Givens-rotation ansatz circuit.
 
-- `create_hf_reference(circuit, n_qubits, n_protons, n_neutrons)` — initialises
-  the Hartree–Fock reference state by applying X gates to the lowest occupied
-  proton and neutron orbitals.
-- `add_adapt_layer(circuit, qubit_a, qubit_b, theta)` — appends one
-  particle-number-conserving Givens rotation between a hole and a particle orbital.
-- `create_ph_excitation_pool(n_qubits, n_protons, n_neutrons, pool_size, pool_pairs)` — enumerates all valid particle-hole excitation pairs; pass the result through `filter_excitations_by_j` before circuit construction.
-- `finalize_ansatz(circuit)` — adds `measure_all` after all Givens layers have
-  been appended.
+- `create_hf_reference(circuit, n_qubits, n_protons, n_neutrons)` — X gates on lowest-SPE occupied orbitals.
+- `create_ph_excitation_pool` + `filter_excitations_by_j(J=0)` — enumerates all particle-hole pairs, reduces pool to J=0-coupled pairs (40→16 for ²⁰Ne, 52→16 for ²²Ne/²²Mg).
+- `add_adapt_layer(circuit, qubit_a, qubit_b, theta)` — one Givens rotation (6 gates: CX, RY, CX, RY, CX, CX).
+- `finalize_ansatz(circuit)` — appends `measure_all`.
 
 ### `symmetry_filter.f90`
-Post-selects sampled bitstrings to keep only those satisfying exact nuclear
-quantum number constraints, eliminating wrong-symmetry shots before
-subspace construction.
+Post-selects bitstrings to keep only those satisfying exact nuclear quantum numbers.
 
-- `setup_single_particle_data(n_qubits, shell_name)` — initialises the
-  per-orbital 2×m_j and parity tables for the specified shell model space
-  (currently `"sd"`).
-- `filter_bitstrings(bitstrings, n_samples, n_qubits, n_qp, n_qn, n_protons, n_neutrons, Mj_2target, parity_target, kept, n_kept)` — filters on proton number, neutron number, J_z projection, and parity. Expected to reduce shot waste by 5–10× compared to unfiltered SQD.
-- `filter_bitstrings_parallel(...)` — same interface but distributes work across
-  Fortran coarray images when compiled with `-fcoarray=lib`; falls back to
-  serial if only one image.
-- `init_parallel_filter()` — checks coarray availability and prints a diagnostic.
+- `setup_single_particle_data(n_qubits, "sd")` — initialises per-orbital 2×m_j and parity tables.
+- `convert_bitstrings_to_int` — character→integer(1) conversion before the timed filter region.
+- `filter_bitstrings_int(...)` — four constraints via `popcnt`/`poppar` hardware intrinsics:
+  proton count N, neutron count Z, Mj=0 (weighted sum), even parity.
+
+### `exact_solver.f90`
+Subspace Hamiltonian construction and diagonalization.
+
+- `build_subspace_hamiltonian(ms, n_p, n_n, bitstrings, kept_idx, n_kept, n_qubits, H, dim, basis_map, info)` —
+  builds H restricted to the subspace spanned by symmetry-valid QPU bitstrings.
+  Deduplicates first (dim ≤ n_kept). Two-body loops use `OMP COLLAPSE(2) SCHEDULE(DYNAMIC,8)`.
+- `build_sd_hamiltonian(ms, n_p, n_n, H, dim, info)` —
+  full Mj=0 even-parity Hamiltonian across all sd-shell states. Not called by the driver; used offline
+  to compute oracle energies when adding a new nucleus (see Switching nuclei above).
+- `diagonalize_exact_complex(H, dim, eigenvalues, eigenvectors, info)` —
+  LAPACK zheev, JOBZ='V'. Lowest eigenvalue = variational ground-state energy.
 
 ### `clebsch_gordan.f90`
-Computes and caches Clebsch–Gordan coefficients for angular momentum coupling,
-used to pre-screen the excitation pool to J=0-coupled pairs before circuit construction.
+CG coefficients for angular momentum coupling.
 
-- `init_cg_tables(j_max_2)` — Initialize CG coefficient tables up to j = j_max_2/2
-- `filter_excitations_by_j(pool_pairs, pool_size, j_target_2, filtered_pairs, filtered_size)` — Filter excitations by angular momentum coupling
-- `lookup_cg(j1_2, j2_2, j_2, m1_2, m2_2, m_2)` — Look up a specific CG coefficient from the table
-- `cleanup_cg_tables()` — Free the CG table memory
+- `init_cg_tables(j_max_2)` / `cleanup_cg_tables()` — allocate/free coefficient cache.
+- `filter_excitations_by_j(pool_pairs, pool_size, J=0, ...)` — removes pairs that cannot couple to J=0; reduces circuit size.
+- With GSL: uses `gsl_sf_coupling_3j` for higher accuracy.
 
-**Optional GSL Support**: When compiled with GSL (GNU Scientific Library),
-`clebsch_gordan` uses GSL's `gsl_sf_coupling_3j` function for computing Wigner 3-j
-symbols, which are then converted to CG coefficients. This provides more accurate
-results for high angular momentum couplings (j > 5/2). Without GSL, the module
-falls back to a built-in Racah formula implementation that works correctly for
-all sd-shell cases.
-
-### `gsl_interface.f90`
-Fortran interface to GSL (GNU Scientific Library) special functions for computing
-Wigner 3-j symbols and Clebsch-Gordan coefficients. This module is always compiled
-but only uses GSL functions when the library is available at build time.
-
-- `gsl_is_available()` — returns `.true.` if compiled with GSL support
-- `gsl_compute_3j(...)` — computes Wigner 3-j symbol using GSL
-- `gsl_compute_cg_from_3j(...)` — computes CG coefficient from 3-j symbol
+### `usdb_reader.f90` / `orbital_registry.f90`
+- `read_usdb_file("USDB.snt", ms, status)` — parses the Brown–Richter USDB interaction (6 SPEs, 158 TBMEs, ¹⁶O core).
+- `init_registry_sd_shell(n_protons, n_neutrons)` — expands 3 sd-shell j-shells into 24 m-substates (12 proton + 12 neutron qubits); the qubit-to-orbital mapping is fixed by this call.
 
 ---
 
-## Test programs
+## Physics reference
 
-The `nuclear_dynamics` directory builds four executables:
+### Orbital ordering (24 qubits, sd-shell)
 
-### Standalone tests (qiskit-free)
-- `test_usdb_reader` — validates `USDB.snt` parser; prints model-space, SPE, TBME
-- `test_exact_solver` — validates j² oracle (0d5/2²) exact diagonalization; ground state E₀ = 4.2234 MeV
+| Orbital | SPE (MeV) | Proton qubits | Neutron qubits |
+|---------|-----------|---------------|----------------|
+| 0d3/2 | +2.1117 | 0–3   | 12–15 |
+| 0d5/2 | −3.9257 | 4–9   | 16–21 |
+| 1s1/2 | −3.2079 | 10–11 | 22–23 |
 
-### Integration tests (qiskit-dependent)
-- `nuclear_dynamics` — integration test suite: HF reference + Givens layers, bitstring filtering, CG pool reduction
-- `nuclear_dynamics_driver` — parameter-sweep driver: builds fixed ansatz for θ ∈ [θ_min, θ_max], filters, diagonalizes, returns E(θ)
+HF reference fills 0d5/2 first (lowest SPE), not file order.
 
----
+### Variational bound
 
-## Build
-
-The application is built from the `applications/` directory as part of the larger
-Qiskit Fortran build system. From `/Users/aaryav/Documents/Qiskit/fortran-trials/applications`:
-
-```bash
-cmake -B build \
-  -DQISKIT_FORTRAN_ROOT=/Users/aaryav/Documents/Qiskit/fortran-trials/build \
-  -DQISKIT_ROOT=/Users/aaryav/Documents/Qiskit/fortran-trials/qiskit
-cmake --build build
-```
-
-The executables are written to `build/nuclear_dynamics/`. No IBM Quantum credentials
-are required — this application runs entirely on the classical host.
-
-**Required paths:**
-- `QISKIT_FORTRAN_ROOT`: path to the qiskit-fortran build directory containing
-  `libqiskit-fortran.a` and the `modules/` subdirectory.
-- `QISKIT_ROOT`: path to the qiskit repository after running `make c` (contains
-  `dist/c/lib/libqiskit.dylib` or equivalent).
-
-### Dependencies
-
-**LAPACK**: Required for exact diagonalization (`exact_solver.f90`).
-- On macOS: uses the Accelerate framework automatically.
-- On Linux: CMake searches for and links the system LAPACK.
-
-**GSL (GNU Scientific Library)**: Optional but recommended for improved accuracy
-in Clebsch-Gordan coefficient calculations for high angular momentum couplings.
-
-- **With GSL** (macOS):
-  ```bash
-  brew install gsl
-  ```
-  CMake automatically detects GSL during configuration.
-
-- **With GSL** (Linux):
-  ```bash
-  # Debian/Ubuntu
-  sudo apt-get install libgsl-dev
-  
-  # Fedora/RHEL
-  sudo dnf install gsl-devel
-  ```
-
-- **Without GSL**: The build continues normally using built-in Racah formulas.
-  All sd-shell calculations work correctly without GSL; it provides higher
-  accuracy only for j > 5/2 couplings.
-
-- **Verify GSL support**: Check the CMake output after configuration. Both
-  configurations pass all tests:
-  ```
-  -- GSL found - version 2.8
-  -- GSL libraries: /opt/homebrew/lib/libgsl.dylib;/opt/homebrew/lib/libgslcblas.dylib
-  ```
-  or
-  ```
-  -- GSL not found - building without GSL support (optional)
-  ```
-
-## Testing
-
-Build all targets (libraries and test executables):
-
-```bash
-cmake --build build
-```
-
-Run the tests from the expected runtime directory (tests require `USDB.snt`):
-
-```bash
-cd build/nuclear_dynamics
-./test_usdb_reader       # validates USDB.snt parser
-./test_exact_solver      # validates j² exact diagonalization
-./nuclear_dynamics       # integration test of ansatz, symmetry filter, and CG pool
-```
-
-All three tests should complete in ~3ms total and print a summary of passing assertions.
-
-**Notes:**
-- `USDB.snt` is copied into the build directory by `configure_file` in the CMakeLists.
-- Test executables print per-step runtime data in scientific notation (e.g., `1.00E-03 s`).
-- On platforms with coarse `system_clock` resolution, fast steps may show `0.00E+00 s`.
-
-### Optional: Coarray parallelism
-
-To enable distributed bitstring filtering across multiple images (requires OpenCoarrays):
-
-```bash
-# Rebuild with coarray support
-cmake -B build -DCMAKE_Fortran_FLAGS="-fcoarray=lib" \
-  -DQISKIT_FORTRAN_ROOT=... -DQISKIT_ROOT=...
-cmake --build build
-# Run with multiple images
-cafrun -n 4 ./build/nuclear_dynamics/nuclear_dynamics
-```
-
----
-
----
-
-## Fortran integration points for variational loops
-
-### Step 1: Parameter-sweep driver (`nuclear_dynamics_driver.f90`)
-
-Demonstrates oracle integration for fixed-ansatz VQE-style sweeps:
-
-```fortran
-use nuclear_dynamics_driver, only: run_parameter_sweep
-
-call run_parameter_sweep(n_theta, theta_min, theta_max, &
-                        n_qubits, n_protons, n_neutrons, shots, &
-                        energies, min_energy)
-```
-
-- Builds HF reference + parametrized Givens layers per theta
-- Generates/receives bitstrings from sampler
-- Filters by (N, Z) symmetry
-- Constructs and diagonalizes j² Hamiltonian (LAPACK zheev)
-- Returns ground state energy for each theta value
-
-**Integration with samplers**: Replace test bitstring generation with real sampler calls:
-```fortran
-call sampler%run(circuit, bitstrings, shots)  ! Aer or Runtime
-call filter_bitstrings(bitstrings, ...)       ! Symmetry post-selection
-call diagonalize_exact_complex(H, eigenvalues, eigenvectors, info)
-```
-
-### Step 2: Coarray parallel executor (`nuclear_dynamics_parallel.f90`)
-
-Demonstrates PGAS parallelism for parameter sweep distribution:
-
-```fortran
-! Each image evaluates one theta independently
-theta_local = theta_min + (this_image() - 1) * step
-energy = evaluate_oracle_at_theta(theta_local)
-sync all
-! Image 1 reduces and prints
-```
-
-- Requires compilation with `-fcoarray=lib` and CAF runtime (e.g., OpenCoarrays)
-- Uses coarrays for inter-image communication (no explicit MPI)
-- Run: `cafrun -n 8 ./nuclear_dynamics_parallel`
-
-### Step 3: Python multiprocessing baseline (`benchmark/nuclear_dynamics_baseline.py`)
-
-Python reference for comparative benchmarking (Fortran PGAS vs Python Process overhead):
-
-- Serial sweep: sequential theta evaluation
-- Parallel sweep: `multiprocessing.Pool(n)` for distribution
-- Oracle interface: equivalent filter + diagonalize
-- Timing comparison on same problem scale (8 theta values, 1024 shots)
-
-### Bitstring extraction pattern
-
-Generic extraction for any sampler backend:
-
-```fortran
-allocate(bitstrings(n_qubits, n_shots))
-do i = 1, n_shots
-  string_i = sampler_result%sample(i)  ! Fortran string from sampler
-  ! Copy into c_char array for FFI
-  do j = 1, n_qubits
-    bitstrings(j, i) = string_i(j:j)
-  end do
-end do
-! Pass to oracle
-call filter_bitstrings(bitstrings, n_shots, n_qubits, ...)
-```
-
-This pattern works with any quantum sampler (Aer, Runtime, custom).
-
----
-
-## Parameter Sweep Driver
-
-The `nuclear_dynamics_driver` executable runs configurable parameter sweeps with optional IBM Runtime integration.
-
-**Build:**
-```bash
-cmake -B build \
-  -DQISKIT_FORTRAN_ROOT=../build \
-  -DQISKIT_ROOT=../qiskit \
-  -DQISKIT_RUNTIME_ROOT=../qiskit-ibm-runtime-c
-cmake --build build --target nuclear_dynamics_driver
-```
-
-**Usage:**
-```bash
-# Test mode (simulated bitstrings)
-./build/nuclear_dynamics/nuclear_dynamics_driver \
-  -n 8 --theta-min 0 --theta-max 1.6 -s 1024
-
-# IBM Runtime mode (requires credentials)
-./build/nuclear_dynamics/nuclear_dynamics_driver \
-  -n 8 --theta-min 0 --theta-max 1.6 -s 1024 --runtime
-```
-
-**Options:** `-n, --iterations NUM` (default 8) | `--theta-min/max VALUE` (default 0/1.6) | `-s, --shots NUM` (default 1024) | `-r, --runtime` (use IBM Quantum)
-
-Compares sweep results against j² oracle (4.2234 MeV). See `RUNTIME_USAGE.md` for details.
+The subspace energy satisfies E_sub ≥ E_oracle unconditionally (Rayleigh-Ritz).
+It is not shot-count-dependent — a single surviving bitstring gives a valid (loose) bound.
+More shots → more unique Slater determinants → subspace closer to the exact ground state.

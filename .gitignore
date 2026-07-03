@@ -57,3 +57,4 @@ man/
 rtf/
 *.doxygen_sqlite3
 Doxyfile
+qiskit-ibm-runtime-c/
