@@ -76,7 +76,11 @@ program runtime_bell
   
   print '(a)', "Transpiling circuit for backend..."
   call flush(6)
+<<<<<<< HEAD
   call transpile(qc, qc_transpiled, backend=backend_target)
+=======
+  qc_transpiled = transpile(qc, backend=backend_target)
+>>>>>>> de6c4be4f3717972899e0a6a03f814887e42b3ef
   print '(a, i0, a)', "Transpiled circuit has ", qc_transpiled%num_instructions(), " instructions."
   call flush(6)
 

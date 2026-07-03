@@ -277,7 +277,7 @@ contains
     s = c_str(qkrt_backend_instance_name(self%ptr))
   end function
 
-  pure function be_is_valid(self) result(ok)
+  function be_is_valid(self) result(ok)
     class(RtBackend), intent(in) :: self
     logical :: ok
     ok = c_associated(self%ptr)

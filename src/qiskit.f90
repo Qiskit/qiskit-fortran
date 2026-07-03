@@ -12,7 +12,10 @@
 
 ! =============================================================================
 ! qiskit.f90  —  Top-level re-export module
+! qiskit.f90  —  Top-level re-export module
 !
+! Aggregates the public API: QuantumCircuit (always), and Target/transpile
+! (SWIG path only — no manual C API equivalents yet).
 ! Aggregates the public API: QuantumCircuit (always), and Target/transpile
 ! (SWIG path only — no manual C API equivalents yet).
 ! =============================================================================
