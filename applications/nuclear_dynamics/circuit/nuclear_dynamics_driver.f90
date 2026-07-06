@@ -65,7 +65,12 @@ contains
             sample_str = res%sample(int(i))
             if (len(sample_str) >= 2 .and. sample_str(1:2) == '0x') then
                 read(sample_str(3:), '(z20)', iostat=ios) hex_val
-                if (ios /= 0) hex_val = 0_8
+                if (ios /= 0) then
+                    write(*, '(a, i0, a, a, a)') &
+                        "WARNING: Failed to parse hex sample at index ", i, ": ", trim(sample_str), &
+                        " - skipping this sample"
+                    cycle  ! Skip the sample entirely, without breaking the workflow
+                end if
                 do j = 1, n_qubits
                     bit_pos = j - 1
                     if (btest(hex_val, bit_pos)) then

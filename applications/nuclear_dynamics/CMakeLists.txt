@@ -14,7 +14,7 @@
 # Nuclear Subspace Diagonalization Application
 #
 # Builds nuclear_dynamics_lib (physics + ansatz + driver) and three test
-# executables: test_exact_solver, test_usdb_reader, nuclear_dynamics_driver.
+# executables: nuclear_dynamics_driver.
 # nuclear_dynamics_parallel is built only when coarray support is detected.
 # =============================================================================
 

@@ -97,7 +97,6 @@ All per-nucleus quantities are derived at runtime from `USDB.snt` and
 | HF reference occupation | `create_hf_reference` fills lowest-SPE 0d5/2 first |
 | Excitation pool size (40→16 or 52→16) | `filter_excitations_by_j(J=0)` |
 | Symmetry filter targets (N, Z) | passed as `--protons`/`--neutrons` arguments |
-| Oracle energy for convergence reporting | hard-coded per (P,N) in the driver |
 
 Currently supported nuclei (all use the same 24-qubit sd-shell basis):
 
