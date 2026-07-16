@@ -95,7 +95,7 @@ contains
     subroutine run_parameter_sweep(n_theta, theta_min, theta_max, &
                                     n_protons, n_neutrons, &
                                     shots, energies, min_energy, use_runtime, &
-                                    start_step)
+                                    start_step, mj2_target, j_target_2)
         integer(c_int), intent(in) :: n_theta
         real(c_double), intent(in) :: theta_min, theta_max
         integer(c_int), intent(in) :: n_protons, n_neutrons
@@ -104,9 +104,12 @@ contains
         real(c_double), intent(out) :: min_energy
         logical, intent(in), optional :: use_runtime
         integer, intent(in), optional :: start_step     ! resume from this step (1-based, skip prior)
+        integer(c_int), intent(in), optional :: mj2_target  ! 2*Mj target sector (0=even-even; ±1=odd-mass)
+        integer(c_int), intent(in), optional :: j_target_2  ! 2*J for CG pool filter (0=J=0 ground state)
 
         integer :: i, j, n_kept, status, i_start
         integer(c_int) :: n_qubits   ! derived from USDB orbital registry
+        integer(c_int) :: mj2_tgt, j_tgt_2   ! resolved from optional args
         real(8) :: theta, delta_theta
         real(8) :: tol_oracle, oracle_e0
         logical :: gs_found
@@ -136,6 +139,11 @@ contains
         integer :: dim, info, ik, n_kept_int
         logical :: do_runtime
         integer(c_int64_t) :: n_backends
+
+        mj2_tgt = 0_c_int
+        j_tgt_2 = 0_c_int
+        if (present(mj2_target)) mj2_tgt = mj2_target
+        if (present(j_target_2)) j_tgt_2 = j_target_2
 
         do_runtime = .false.
         if (present(use_runtime)) do_runtime = use_runtime
@@ -261,18 +269,28 @@ contains
             ! inequality and parity condition for J_target=0.
             block
                 integer(c_int), allocatable :: raw_pairs(:,:), filtered_pairs(:,:)
+                integer(c_int), allocatable :: ranked_pairs(:,:)
+                real(8),        allocatable :: tbme_weights(:)
                 integer(c_int) :: raw_size, filtered_size
                 integer :: k
                 call create_ph_excitation_pool(n_qubits, n_protons, n_neutrons, &
                                                raw_size, raw_pairs)
-                call filter_excitations_by_j(raw_pairs, raw_size, 0_c_int, &
+                call filter_excitations_by_j(raw_pairs, raw_size, j_tgt_2, &
                                              filtered_pairs, filtered_size)
+                ! Rank pairs by |V_ms(h,h;v,v)| descending so largest TBMEs go first
+                call rank_pairs_by_tbme(model_space, filtered_pairs, int(filtered_size), &
+                                        ranked_pairs, tbme_weights)
                 if (i == 1) then
                     print '("  Raw pool size     :", I4)', raw_size
                     print '("  CG-filtered (J=0) :", I4)', filtered_size
+                    print '("  TBME ranking (top-3 |V_ms| MeV):")'
+                    do k = 1, min(3, int(filtered_size))
+                        write(*,'("    pair (",I2,"->",I2,"): V_ms=",F8.4," MeV")') &
+                            ranked_pairs(k,1), ranked_pairs(k,2), tbme_weights(k)
+                    end do
                 end if
                 do k = 1, filtered_size
-                    call add_adapt_layer(circuit, filtered_pairs(k, 1), filtered_pairs(k, 2), &
+                    call add_adapt_layer(circuit, ranked_pairs(k, 1), ranked_pairs(k, 2), &
                                          real(theta / real(k, 8), c_double))
                 end do
             end block
@@ -358,7 +376,7 @@ contains
             call filter_bitstrings_int(occ_int, shots, int(n_qubits), &
                                        int(n_qubits/2), &
                                        n_protons, n_neutrons, &
-                                       0_c_int, 0_c_int, &
+                                       mj2_tgt, 0_c_int, &
                                        kept, n_kept)
             call system_clock(tc1)
             t_filter_ns = (tc1 - tc0) * (1000000000_8 / tick_rate)
@@ -489,10 +507,13 @@ contains
     !> Reads bitstrings_step01.txt .. bitstrings_stepNN.txt from bits_dir,
     !> runs symmetry filter → subspace Hamiltonian → diagonalisation for each,
     !> and emits RESULT lines identical to run_parameter_sweep.
-    subroutine run_bitstrings_dir(bits_dir, n_protons, n_neutrons, max_steps)
+    subroutine run_bitstrings_dir(bits_dir, n_protons, n_neutrons, max_steps, &
+                                   mj2_target, j_target_2)
         character(len=*), intent(in) :: bits_dir
         integer(c_int),   intent(in) :: n_protons, n_neutrons
         integer,          intent(in) :: max_steps   ! maximum steps to look for
+        integer(c_int), intent(in), optional :: mj2_target  ! 2*Mj target sector (0=even-even; ±1=odd-mass)
+        integer(c_int), intent(in), optional :: j_target_2  ! 2*J for CG pool filter (0=J=0 ground state)
 
         type(model_space_data) :: ms
         character(kind=c_char), allocatable :: bitstrings(:,:)
@@ -503,6 +524,7 @@ contains
         complex(8),             allocatable :: hamiltonian(:,:), eigenvectors(:,:)
         integer(c_int) :: n_qubits, n_kept_ci
         integer(c_int) :: n_shots_file
+        integer(c_int) :: mj2_tgt   ! resolved from optional arg
         integer        :: i, j, ik, n_kept, dim, info, snt_st, n_valid_steps
         integer        :: funit, ios, q
         integer(8)     :: tc0, tc1, tick
@@ -511,6 +533,9 @@ contains
         real(8)        :: oracle_e0, e_min
         character(len=256) :: bsfile
         character(len=24)  :: linebuf
+
+        mj2_tgt = 0_c_int
+        if (present(mj2_target)) mj2_tgt = mj2_target
 
         print *, "=========================================="
         print *, "Fortran classical pipeline (--bitstrings-dir)"
@@ -590,7 +615,7 @@ contains
             call system_clock(tc0)
             n_kept_ci = 0_c_int
             call filter_bitstrings_int(occ_int, int(n_shots_file), int(n_qubits), int(n_qubits/2), &
-                                       n_protons, n_neutrons, 0_c_int, 0_c_int, kept, n_kept_ci)
+                                       n_protons, n_neutrons, mj2_tgt, 0_c_int, kept, n_kept_ci)
             call system_clock(tc1)
             t_filter_ns = (tc1 - tc0) * (1000000000_8 / tick)
             n_kept = int(n_kept_ci)
@@ -691,6 +716,8 @@ program nuclear_dynamics_driver_exe
 
     integer(c_int) :: N_PROTONS = 2
     integer(c_int) :: N_NEUTRONS = 2
+    integer(c_int) :: MJ2_TARGET = 0_c_int  ! 2*Mj sector (0=even-even; ±1=odd-mass)
+    integer(c_int) :: J_TARGET_2 = 0_c_int  ! 2*J for CG pool filter (0=J=0)
 
     ! sweep wall-clock (start/stop around the full run_parameter_sweep call)
     integer(8) :: t_wall_0, t_wall_1, tick_rate_wall
@@ -758,6 +785,18 @@ program nuclear_dynamics_driver_exe
             if (i <= n_args) then
                 call get_command_argument(i, bitstrings_dir)
             end if
+        case ('--mj-target')
+            i = i + 1
+            if (i <= n_args) then
+                call get_command_argument(i, arg)
+                read(arg, *) MJ2_TARGET
+            end if
+        case ('--j-target')
+            i = i + 1
+            if (i <= n_args) then
+                call get_command_argument(i, arg)
+                read(arg, *) J_TARGET_2
+            end if
         case ('--help', '-h')
             print *, "Usage: nuclear_dynamics_driver [OPTIONS]"
             print *, "  -n, --iterations NUM   theta steps (default 15, stops early on convergence)"
@@ -769,6 +808,8 @@ program nuclear_dynamics_driver_exe
             print *, "  -r, --runtime          use IBM Runtime"
             print *, "  --bitstrings-dir DIR   load bitstrings_stepNN.txt from DIR, skip QPU"
             print *, "  --start-step N         resume sweep from step N (skip steps 1..N-1)"
+            print *, "  --mj-target N          2*Mj target sector: 0=even-even (default), ±1=odd-mass"
+            print *, "  --j-target N           2*J for CG pool filter: 0=J=0 (default), 2=J=1, etc."
             stop 0
         end select
         i = i + 1
@@ -776,7 +817,8 @@ program nuclear_dynamics_driver_exe
 
     ! ── Mode: classical pipeline on pre-dumped bitstrings ────────────────────
     if (bitstrings_mode) then
-        call run_bitstrings_dir(trim(bitstrings_dir), N_PROTONS, N_NEUTRONS, n_theta)
+        call run_bitstrings_dir(trim(bitstrings_dir), N_PROTONS, N_NEUTRONS, n_theta, &
+                                mj2_target=MJ2_TARGET, j_target_2=J_TARGET_2)
         stop 0
     end if
 
@@ -792,7 +834,8 @@ program nuclear_dynamics_driver_exe
     call run_parameter_sweep(int(n_theta, c_int), real(theta_min, c_double), real(theta_max, c_double), &
                             int(N_PROTONS, c_int), int(N_NEUTRONS, c_int), &
                             int(shots, c_int), energies, min_energy, use_runtime, &
-                            start_step=start_step_arg)
+                            start_step=start_step_arg, &
+                            mj2_target=MJ2_TARGET, j_target_2=J_TARGET_2)
     call system_clock(t_wall_1)
 
     write(*,'("RESULT  sweep_wall     ",I16," ns")') &

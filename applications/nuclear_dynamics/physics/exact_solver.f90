@@ -29,6 +29,7 @@ module exact_solver
 
     public :: build_subspace_hamiltonian
     public :: build_sd_hamiltonian
+    public :: rank_pairs_by_tbme
 
     public :: diagonalize_exact
     public :: diagonalize_exact_complex
@@ -461,16 +462,19 @@ contains
 
     end subroutine diagonalize_exact_complex
 
-    subroutine build_sd_hamiltonian(ms, n_protons, n_neutrons, H_matrix, dim, status)
+    subroutine build_sd_hamiltonian(ms, n_protons, n_neutrons, H_matrix, dim, status, &
+                                     mj2_target)
         type(model_space_data), intent(in)  :: ms
         integer,                intent(in)  :: n_protons, n_neutrons
         complex(8), allocatable, intent(out) :: H_matrix(:,:)
         integer,                intent(out) :: dim
         integer,                intent(out) :: status
+        integer,      optional, intent(in)  :: mj2_target  ! 2*Mj target sector; default 0 (Mj=0)
 
         ! Single-particle basis: all m-substates across all orbitals
         type(sp_state), allocatable :: sp(:)
         integer :: n_sp, n_sp_p, n_sp_n
+        integer :: mj2_tgt
 
         ! Many-body Slater-determinant basis
         ! Each basis state is stored as a bitmask over sp states (1..n_sp).
@@ -483,6 +487,8 @@ contains
         real(8) :: h_elem
         integer :: Mj2_tot, par_tot
 
+        mj2_tgt = 0
+        if (present(mj2_target)) mj2_tgt = mj2_target
         status = 0
 
         ! ---------------------------------------------------------------
@@ -522,7 +528,7 @@ contains
         ! with Mj_tot = 0 and parity = 0 (even)
         ! ---------------------------------------------------------------
         dim = 0
-        call count_sd_basis(sp, n_sp, n_sp_p, n_protons, n_neutrons, dim)
+        call count_sd_basis(sp, n_sp, n_sp_p, n_protons, n_neutrons, dim, mj2_tgt)
         if (dim == 0) then
             print *, "ERROR: build_sd_hamiltonian: no basis states found"
             status = -1
@@ -531,7 +537,7 @@ contains
         end if
 
         allocate(sd_basis(n_sp, dim))
-        call fill_sd_basis(sp, n_sp, n_sp_p, n_protons, n_neutrons, sd_basis, dim)
+        call fill_sd_basis(sp, n_sp, n_sp_p, n_protons, n_neutrons, sd_basis, dim, mj2_tgt)
 
 
         ! ---------------------------------------------------------------
@@ -583,10 +589,11 @@ contains
     ! count_sd_basis / fill_sd_basis
     ! Shared combination-iteration logic; split to avoid passing unallocated arrays.
 
-    subroutine count_sd_basis(sp, n_sp, n_sp_p, n_protons, n_neutrons, dim)
+    subroutine count_sd_basis(sp, n_sp, n_sp_p, n_protons, n_neutrons, dim, mj2_target)
         type(sp_state), intent(in)  :: sp(:)
         integer,        intent(in)  :: n_sp, n_sp_p, n_protons, n_neutrons
         integer,        intent(out) :: dim
+        integer,        intent(in)  :: mj2_target   ! 2*Mj sector to enumerate
         integer :: n_sp_n, pi(n_protons), ni(n_neutrons), ip, in_, k, Mj2, par
         n_sp_n = n_sp - n_sp_p
         dim = 0
@@ -603,7 +610,7 @@ contains
                     Mj2 = Mj2 + sp(ni(k))%mj2
                     par = ieor(par, sp(ni(k))%l)
                 end do
-                if (Mj2 == 0 .and. mod(par, 2) == 0) dim = dim + 1
+                if (Mj2 == mj2_target .and. mod(par, 2) == 0) dim = dim + 1
                 in_ = n_neutrons
                 do while (in_ >= 1 .and. ni(in_) == n_sp_p + n_sp_n - (n_neutrons - in_))
                     in_ = in_ - 1
@@ -623,10 +630,11 @@ contains
     end subroutine count_sd_basis
 
 
-    subroutine fill_sd_basis(sp, n_sp, n_sp_p, n_protons, n_neutrons, sd_basis, dim)
+    subroutine fill_sd_basis(sp, n_sp, n_sp_p, n_protons, n_neutrons, sd_basis, dim, mj2_target)
         type(sp_state), intent(in)  :: sp(:)
         integer,        intent(in)  :: n_sp, n_sp_p, n_protons, n_neutrons, dim
         integer,        intent(out) :: sd_basis(n_sp, dim)
+        integer,        intent(in)  :: mj2_target   ! 2*Mj sector to enumerate
         integer :: n_sp_n, pi(n_protons), ni(n_neutrons), ip, in_, k, Mj2, par, cnt
         integer :: occ(n_sp)
         n_sp_n = n_sp - n_sp_p
@@ -644,7 +652,7 @@ contains
                     Mj2 = Mj2 + sp(ni(k))%mj2
                     par = ieor(par, sp(ni(k))%l)
                 end do
-                if (Mj2 == 0 .and. mod(par, 2) == 0) then
+                if (Mj2 == mj2_target .and. mod(par, 2) == 0) then
                     cnt = cnt + 1
                     occ = 0
                     do k = 1, n_protons; occ(pi(k)) = 1; end do
@@ -1011,6 +1019,106 @@ contains
         deallocate(sp, sd_basis, unique_map, occ_tmp)
 
     end subroutine build_subspace_hamiltonian
+
+    ! Subroutine: rank_pairs_by_tbme
+    !
+    ! Reorders CG-filtered particle-hole pairs by descending |V_ms(h,h;v,v)|
+    ! — the diagonal m-scheme TBME that drives the ADAPT gradient at the HF
+    ! reference.  Pairs with larger |V_ms| drive the largest first-order energy
+    ! correction and should appear first in the Givens-rotation circuit so they
+    ! are applied to the freshest state.
+    !
+    ! Only the ordering is changed; the pair list itself is not pruned further.
+    ! Also returns the raw V_ms values so the caller can use them for MP2 angle
+    ! initialisation without re-computing them.
+    !
+    ! Arguments:
+    !   ms            : Populated model_space_data
+    !   filtered_pairs: (n_pairs, 2) — col1=hole qubit (0-based), col2=virtual qubit
+    !   n_pairs       : Number of pairs
+    !   ranked_pairs  : Output — same pairs, sorted by |V_ms| descending
+    !   tbme_weights  : Output — V_ms(h,h;v,v) for each ranked pair (MeV)
+    subroutine rank_pairs_by_tbme(ms, filtered_pairs, n_pairs, ranked_pairs, tbme_weights)
+        use iso_c_binding, only: c_int
+        type(model_space_data), intent(in)  :: ms
+        integer(c_int),         intent(in)  :: filtered_pairs(:,:)
+        integer,                intent(in)  :: n_pairs
+        integer(c_int), allocatable, intent(out) :: ranked_pairs(:,:)
+        real(8),        allocatable, intent(out) :: tbme_weights(:)
+
+        type(sp_state), allocatable :: sp(:)
+        integer :: n_sp, k, i, j_orb, m2, sp_idx, h_sp, v_sp
+        real(8) :: vms
+        real(8), allocatable :: scores(:)
+        integer, allocatable :: order(:)
+        real(8) :: tmp_score
+        integer :: tmp_idx, min_pos
+        integer(c_int), allocatable :: tmp_pair(:)
+
+        ! Build sp array (protons tz=-1 first, then neutrons tz=+1, descending mj)
+        n_sp = 0
+        do i = 1, ms%n_orbitals
+            n_sp = n_sp + ms%orbitals(i)%j2 + 1
+        end do
+        allocate(sp(n_sp))
+        k = 0
+        do j_orb = -1, 1, 2
+            do i = 1, ms%n_orbitals
+                if (ms%orbitals(i)%tz /= j_orb) cycle
+                do m2 = ms%orbitals(i)%j2, -ms%orbitals(i)%j2, -2
+                    k = k + 1
+                    sp(k)%orb_idx = ms%orbitals(i)%idx
+                    sp(k)%j2      = ms%orbitals(i)%j2
+                    sp(k)%mj2     = m2
+                    sp(k)%tz      = ms%orbitals(i)%tz
+                    sp(k)%l       = ms%orbitals(i)%l
+                    sp(k)%spe     = ms%spes(ms%orbitals(i)%idx)
+                end do
+            end do
+        end do
+
+        allocate(scores(n_pairs), order(n_pairs))
+        do k = 1, n_pairs
+            order(k) = k
+            ! filtered_pairs uses 0-based qubit indices; sp array is 1-based
+            h_sp = filtered_pairs(k, 1) + 1
+            v_sp = filtered_pairs(k, 2) + 1
+            ! V_ms(h,v;h,v): antisymmetric TBME with all four distinct indices.
+            ! This is the ADAPT gradient numerator at the HF reference for the
+            ! 1p1h excitation (h->v): g = 2*V_ms(h,v;h,v).
+            call v_ms_elem(sp, ms%tbmes, ms%n_tbme, h_sp, v_sp, h_sp, v_sp, vms)
+            scores(k) = abs(vms)
+        end do
+
+        ! Selection sort descending (n_pairs typically ≤ 16 — no need for qsort)
+        do i = 1, n_pairs - 1
+            min_pos = i
+            do j_orb = i + 1, n_pairs
+                if (scores(order(j_orb)) > scores(order(min_pos))) min_pos = j_orb
+            end do
+            if (min_pos /= i) then
+                tmp_idx        = order(i)
+                order(i)       = order(min_pos)
+                order(min_pos) = tmp_idx
+            end if
+        end do
+
+        allocate(ranked_pairs(n_pairs, 2))
+        allocate(tbme_weights(n_pairs))
+        allocate(tmp_pair(2))
+        do k = 1, n_pairs
+            sp_idx = order(k)
+            ranked_pairs(k, 1) = filtered_pairs(sp_idx, 1)
+            ranked_pairs(k, 2) = filtered_pairs(sp_idx, 2)
+            h_sp = filtered_pairs(sp_idx, 1) + 1
+            v_sp = filtered_pairs(sp_idx, 2) + 1
+            call v_ms_elem(sp, ms%tbmes, ms%n_tbme, h_sp, v_sp, h_sp, v_sp, vms)
+            tbme_weights(k) = vms
+        end do
+
+        deallocate(sp, scores, order, tmp_pair)
+
+    end subroutine rank_pairs_by_tbme
 
 
 end module exact_solver

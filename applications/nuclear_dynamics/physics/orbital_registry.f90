@@ -141,6 +141,29 @@ contains
       deallocate(used)
     end block
 
+    block
+      integer :: q, fp, fn
+      fp = 0; fn = 0
+      do q = 1, n_reg
+        if (tbl_tz(q) == -1 .and. tbl_occupied(q)) fp = fp + 1
+        if (tbl_tz(q) ==  1 .and. tbl_occupied(q)) fn = fn + 1
+      end do
+      if (fp /= n_protons) then
+        write(*,'(a,i0,a,i0,a)') &
+            "orbital_registry: requested ", n_protons, &
+            " protons but filled ", fp, &
+            "! exceeds model-space capacity or odd count (Jz=0 requires even)"
+        error stop
+      end if
+      if (fn /= n_neutrons) then
+        write(*,'(a,i0,a,i0,a)') &
+            "orbital_registry: requested ", n_neutrons, &
+            " neutrons but filled ", fn, &
+            "! exceeds model-space capacity or odd count (Jz=0 requires even)"
+        error stop
+      end if
+    end block
+
   end subroutine init_registry_from_snt
 
   subroutine init_registry_sd_shell(n_protons, n_neutrons)
