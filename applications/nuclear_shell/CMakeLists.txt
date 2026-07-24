@@ -13,9 +13,9 @@
 # =============================================================================
 # Nuclear Subspace Diagonalization Application
 #
-# Builds nuclear_dynamics_lib (physics + ansatz + driver) and three test
-# executables: nuclear_dynamics_driver.
-# nuclear_dynamics_parallel is built only when coarray support is detected.
+# Builds nuclear_shell_lib (physics + ansatz + driver modules) and
+# nuclear_shell_driver executable.
+# nuclear_shell_parallel is built only when coarray support is detected.
 # =============================================================================
 
 # Find LAPACK for exact_solver.f90 (dsyev routine)
@@ -29,7 +29,7 @@ else()
     message(STATUS "Using LAPACK libraries: ${LAPACK_LIBRARIES}")
 endif()
 
-# Find OpenMP for parallel Hamiltonian build (build_sd_hamiltonian inner loop).
+# Find OpenMP for parallel Hamiltonian build (Hamiltonian inner loop).
 # CMake's FindOpenMP does not auto-detect flang's flags on macOS; we probe manually.
 find_package(OpenMP)
 if(NOT OpenMP_Fortran_FOUND)
@@ -40,15 +40,15 @@ if(NOT OpenMP_Fortran_FOUND)
         set(FLANG_OPENMP_FLAGS "-fopenmp")
         set(FLANG_OPENMP_LIBS  "-L${_LIBOMP_HINT}" "${_LIBOMP_LIB}")
         set(OpenMP_Fortran_FOUND TRUE)
-        message(STATUS "Flang OpenMP: ${_LIBOMP_LIB} — parallel Hamiltonian build enabled")
+        message(STATUS "Flang OpenMP: ${_LIBOMP_LIB}  -  parallel Hamiltonian build enabled")
     else()
-        message(STATUS "OpenMP not found — Hamiltonian build will be serial")
+        message(STATUS "OpenMP not found  -  Hamiltonian build will be serial")
     endif()
 else()
-    message(STATUS "OpenMP found (CMake) — parallel Hamiltonian build enabled")
+    message(STATUS "OpenMP found (CMake)  -  parallel Hamiltonian build enabled")
 endif()
 
-# Find runtime library (optional, for nuclear_dynamics_driver)
+# Find runtime library (optional, for nuclear_shell_driver)
 if(NOT QISKIT_RUNTIME_ROOT STREQUAL "")
     find_library(QISKIT_RUNTIME_LIB
         NAMES qiskit_ibm_runtime
@@ -56,7 +56,7 @@ if(NOT QISKIT_RUNTIME_ROOT STREQUAL "")
               "${QISKIT_RUNTIME_ROOT}/build/cargo/debug"
         NO_DEFAULT_PATH)
     if(QISKIT_RUNTIME_LIB)
-        message(STATUS "Runtime lib (nuclear_dynamics) : ${QISKIT_RUNTIME_LIB}")
+        message(STATUS "Runtime lib (nuclear_shell) : ${QISKIT_RUNTIME_LIB}")
     else()
         message(STATUS "Runtime lib not found in ${QISKIT_RUNTIME_ROOT}")
     endif()
@@ -97,9 +97,9 @@ endif()
 set(CMAKE_BUILD_RPATH "${_rpath}")
 set(CMAKE_INSTALL_RPATH "${_rpath}")
 
-# Single unified library: nuclear_dynamics_lib
+# Single unified library: nuclear_shell_lib
 # Contains all physics modules, ansatz, and driver
-add_library(nuclear_dynamics_lib
+add_library(nuclear_shell_lib
     physics/usdb_reader.f90
     physics/orbital_registry.f90
     physics/clebsch_gordan.f90
@@ -107,18 +107,21 @@ add_library(nuclear_dynamics_lib
     physics/exact_solver.f90
     physics/symmetry_filter.f90
     circuit/nuclear_ansatz.f90
-    circuit/nuclear_dynamics_driver.f90
+    nuclear_pool.f90
+    nuclear_selection.f90
+    nuclear_gates.f90
+    circuit/nuclear_shell_driver.f90
 )
 
-set_target_properties(nuclear_dynamics_lib PROPERTIES
+set_target_properties(nuclear_shell_lib PROPERTIES
     Fortran_MODULE_DIRECTORY ${CMAKE_BINARY_DIR}/modules
 )
 
-target_include_directories(nuclear_dynamics_lib PRIVATE
+target_include_directories(nuclear_shell_lib PRIVATE
     ${CMAKE_BINARY_DIR}/modules
 )
 
-target_link_libraries(nuclear_dynamics_lib PRIVATE
+target_link_libraries(nuclear_shell_lib PRIVATE
     qiskit-fortran
     ${LAPACK_LIBRARIES}
 )
@@ -126,36 +129,36 @@ target_link_libraries(nuclear_dynamics_lib PRIVATE
 # Add OpenMP support if available (parallel Hamiltonian build)
 if(OpenMP_Fortran_FOUND)
     if(TARGET OpenMP::OpenMP_Fortran)
-        target_link_libraries(nuclear_dynamics_lib PRIVATE OpenMP::OpenMP_Fortran)
-        target_compile_options(nuclear_dynamics_lib PRIVATE ${OpenMP_Fortran_FLAGS})
+        target_link_libraries(nuclear_shell_lib PRIVATE OpenMP::OpenMP_Fortran)
+        target_compile_options(nuclear_shell_lib PRIVATE ${OpenMP_Fortran_FLAGS})
     elseif(DEFINED FLANG_OPENMP_FLAGS)
-        target_compile_options(nuclear_dynamics_lib PRIVATE ${FLANG_OPENMP_FLAGS})
-        target_link_libraries(nuclear_dynamics_lib PRIVATE ${FLANG_OPENMP_LIBS})
+        target_compile_options(nuclear_shell_lib PRIVATE ${FLANG_OPENMP_FLAGS})
+        target_link_libraries(nuclear_shell_lib PRIVATE ${FLANG_OPENMP_LIBS})
     endif()
 endif()
 
 # Add GSL support if available
 if(GSL_FOUND)
-    target_compile_definitions(nuclear_dynamics_lib PRIVATE USE_GSL)
-    target_include_directories(nuclear_dynamics_lib PRIVATE ${GSL_INCLUDE_DIRS})
+    target_compile_definitions(nuclear_shell_lib PRIVATE USE_GSL)
+    target_include_directories(nuclear_shell_lib PRIVATE ${GSL_INCLUDE_DIRS})
     if(TARGET GSL::gsl)
-        target_link_libraries(nuclear_dynamics_lib PRIVATE GSL::gsl GSL::gslcblas)
+        target_link_libraries(nuclear_shell_lib PRIVATE GSL::gsl GSL::gslcblas)
     else()
-        target_link_libraries(nuclear_dynamics_lib PRIVATE ${GSL_LIBRARIES})
+        target_link_libraries(nuclear_shell_lib PRIVATE ${GSL_LIBRARIES})
     endif()
 endif()
 
-# Build nuclear_dynamics_driver executable (with runtime support)
-add_executable(nuclear_dynamics_driver
-    circuit/nuclear_dynamics_driver.f90
+# Build nuclear_shell_driver executable (with runtime support)
+add_executable(nuclear_shell_driver
+    circuit/nuclear_shell_driver.f90
 )
 
-target_link_libraries(nuclear_dynamics_driver
-    nuclear_dynamics_lib
+target_link_libraries(nuclear_shell_driver
+    nuclear_shell_lib
 )
 
 if(QISKIT_RUNTIME_LIB)
-    target_link_libraries(nuclear_dynamics_driver
+    target_link_libraries(nuclear_shell_driver
         "${QISKIT_RUNTIME_LIB}"
     )
     get_filename_component(_runtime_lib_dir "${QISKIT_RUNTIME_LIB}" DIRECTORY)
@@ -163,40 +166,42 @@ if(QISKIT_RUNTIME_LIB)
     set(CMAKE_INSTALL_RPATH "${CMAKE_INSTALL_RPATH};${_runtime_lib_dir}")
 endif()
 
-target_include_directories(nuclear_dynamics_driver PRIVATE
+target_include_directories(nuclear_shell_driver PRIVATE
     ${CMAKE_BINARY_DIR}/modules
 )
 
 if(CMAKE_BUILD_RPATH)
-    set_target_properties(nuclear_dynamics_driver PROPERTIES
+    set_target_properties(nuclear_shell_driver PROPERTIES
         BUILD_RPATH "${CMAKE_BUILD_RPATH}"
         INSTALL_RPATH "${CMAKE_INSTALL_RPATH}"
         BUILD_WITH_INSTALL_RPATH OFF)
 endif()
 
-# Build nuclear_dynamics_parallel executable (requires coarray support)
+# Build nuclear_shell_parallel executable (requires coarray support).
+# Each coarray image processes a disjoint partition of per-circuit bitstring
+# files for the classical post-processing (filter -> Hamiltonian -> diag).
 if(CMAKE_Fortran_COMPILER_SUPPORTS_F2008_COARRAYS)
-    message(STATUS "Coarray support detected — building nuclear_dynamics_parallel")
-    add_executable(nuclear_dynamics_parallel
-        circuit/nuclear_dynamics_parallel.f90
+    message(STATUS "Coarray support detected  -  building nuclear_shell_parallel")
+    add_executable(nuclear_shell_parallel
+        circuit/nuclear_shell_parallel.f90
     )
 
-    target_link_libraries(nuclear_dynamics_parallel
-        nuclear_dynamics_lib
+    target_link_libraries(nuclear_shell_parallel
+        nuclear_shell_lib
     )
 
-    target_include_directories(nuclear_dynamics_parallel PRIVATE
+    target_include_directories(nuclear_shell_parallel PRIVATE
         ${CMAKE_BINARY_DIR}/modules
     )
 
     if(CMAKE_BUILD_RPATH)
-        set_target_properties(nuclear_dynamics_parallel PROPERTIES
+        set_target_properties(nuclear_shell_parallel PROPERTIES
             BUILD_RPATH "${CMAKE_BUILD_RPATH}"
             INSTALL_RPATH "${CMAKE_INSTALL_RPATH}"
             BUILD_WITH_INSTALL_RPATH OFF)
     endif()
 else()
-    message(STATUS "Coarray support not detected — skipping nuclear_dynamics_parallel")
+    message(STATUS "Coarray support not detected  -  skipping nuclear_shell_parallel")
 endif()
 
 # Make USDB.snt available beside the driver in the build tree.
@@ -205,6 +210,6 @@ configure_file(${CMAKE_CURRENT_SOURCE_DIR}/data/USDB.snt
                COPYONLY)
 
 # Installation
-install(TARGETS nuclear_dynamics_driver
+install(TARGETS nuclear_shell_driver
     RUNTIME DESTINATION bin
 )

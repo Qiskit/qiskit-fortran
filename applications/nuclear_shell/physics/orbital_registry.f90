@@ -17,6 +17,7 @@ module orbital_registry
   private
 
   public :: init_registry_from_snt
+  public :: init_registry_from_file
   public :: init_registry_sd_shell
   public :: reg_n_qubits
   public :: reg_j2
@@ -166,16 +167,29 @@ contains
 
   end subroutine init_registry_from_snt
 
-  subroutine init_registry_sd_shell(n_protons, n_neutrons)
-    integer(c_int), intent(in) :: n_protons, n_neutrons
+  ! Load a .snt file by name and initialise the registry.
+  ! Prefer this over init_registry_sd_shell when the filename is not "USDB.snt"
+  ! (e.g. a pf-shell interaction such as "GXPF1A.snt").
+  subroutine init_registry_from_file(snt_filename, n_protons, n_neutrons)
+    character(len=*), intent(in) :: snt_filename
+    integer(c_int),   intent(in) :: n_protons, n_neutrons
 
     type(model_space_data) :: ms
     integer :: status
 
-    call read_usdb_file("USDB.snt", ms, status)
+    call read_usdb_file(snt_filename, ms, status)
+    if (status /= 0) then
+      write(*,'(a,a,a)') "orbital_registry: could not load ", trim(snt_filename), "  -  check path"
+      error stop
+    end if
     call init_registry_from_snt(ms, n_protons, n_neutrons)
     call free_model_space(ms)
 
+  end subroutine init_registry_from_file
+
+  subroutine init_registry_sd_shell(n_protons, n_neutrons)
+    integer(c_int), intent(in) :: n_protons, n_neutrons
+    call init_registry_from_file("USDB.snt", n_protons, n_neutrons)
   end subroutine init_registry_sd_shell
 
   integer function reg_n_qubits()

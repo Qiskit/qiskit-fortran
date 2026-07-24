@@ -14,7 +14,7 @@
 !>
 !> File format (.snt):
 !>   First non-comment line: n_proton_orbs  n_neutron_orbs  core_A  core_Z
-!>   Next n_orb lines: orbital definitions — idx  n  l  2j  tz
+!>   Next n_orb lines: orbital definitions  -  idx  n  l  2j  tz
 !>     (tz = -1 proton, +1 neutron)
 !>   SPE header line: n_spe  method
 !>   Next n_spe lines: i  i  energy(MeV)   (diagonal only)
@@ -33,7 +33,7 @@ module usdb_reader
   private
 
   public :: orbital_info, tbme_element, model_space_data
-  public :: read_usdb_file, get_j_shell_tbmes, free_model_space
+  public :: read_usdb_file, free_model_space
 
   ! derived types
 
@@ -167,54 +167,6 @@ contains
     close(U)
   end subroutine read_usdb_file
 
-  !> Extract TBMEs where all four orbital indices have 2j = j2_target.
-  !>
-  !> For the j2 pairing toy model (two nucleons in a single j-shell) we only
-  !> need <jj;J|V|jj;J>.  In the sd-shell j2=5 selects 0d5/2, j2=3 selects
-  !> 0d3/2, j2=1 selects 1s1/2.
-  !>
-  !> **Model space simplification**: This function filters to single-j-shell
-  !> interactions (12 of 158 TBMEs for d5/2). Full sd-shell calculations require
-  !> cross-shell matrix elements like <d5/2,s1/2|V|d3/2,d5/2>, increasing both
-  !> classical diagonalization cost (hours vs milliseconds) and quantum circuit
-  !> depth (~2000 vs ~200 gates). The USDB interaction is complete; this is a
-  !> model space truncation for algorithm validation, not an interaction limitation.
-  !>
-  !> @param[in]  j2_target    2*j for the shell of interest
-  !> @param[in]  ms           Populated model_space_data
-  !> @param[out] tbmes_out    Extracted TBMEs (allocated here)
-  !> @param[out] n_out        Number extracted
-  subroutine get_j_shell_tbmes(j2_target, ms, tbmes_out, n_out)
-    integer,                intent(in)  :: j2_target
-    type(model_space_data), intent(in)  :: ms
-    type(tbme_element), allocatable, intent(out) :: tbmes_out(:)
-    integer,                intent(out) :: n_out
-
-    integer :: i, cnt
-
-    ! Two-pass: count then collect
-    cnt = 0
-    do i = 1, ms%n_tbme
-      if (orb_j2(ms, ms%tbmes(i)%a) == j2_target .and. &
-          orb_j2(ms, ms%tbmes(i)%b) == j2_target .and. &
-          orb_j2(ms, ms%tbmes(i)%c) == j2_target .and. &
-          orb_j2(ms, ms%tbmes(i)%d) == j2_target) cnt = cnt + 1
-    end do
-
-    n_out = cnt
-    allocate(tbmes_out(n_out))
-    cnt = 0
-    do i = 1, ms%n_tbme
-      if (orb_j2(ms, ms%tbmes(i)%a) == j2_target .and. &
-          orb_j2(ms, ms%tbmes(i)%b) == j2_target .and. &
-          orb_j2(ms, ms%tbmes(i)%c) == j2_target .and. &
-          orb_j2(ms, ms%tbmes(i)%d) == j2_target) then
-        cnt = cnt + 1
-        tbmes_out(cnt) = ms%tbmes(i)
-      end if
-    end do
-  end subroutine get_j_shell_tbmes
-
   !> Deallocate all allocatable components of a model_space_data.
   subroutine free_model_space(ms)
     type(model_space_data), intent(inout) :: ms
@@ -228,20 +180,7 @@ contains
   ! Private helpers
   ! ===========================================================================
 
-  !> Return j2 of orbital index orb_idx (0 if not found).
-  integer function orb_j2(ms, orb_idx) result(j2)
-    type(model_space_data), intent(in) :: ms
-    integer,                intent(in) :: orb_idx
-    integer :: k
-    j2 = 0
-    do k = 1, ms%n_orbitals
-      if (ms%orbitals(k)%idx == orb_idx) then
-        j2 = ms%orbitals(k)%j2; return
-      end if
-    end do
-  end function orb_j2
-
-  !> Return the next non-blank, non-comment line from unit U.
+!> Return the next non-blank, non-comment line from unit U.
   subroutine next_noncomment(U, line, ios)
     integer,            intent(in)  :: U
     character(len=512), intent(out) :: line
