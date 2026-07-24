@@ -102,7 +102,7 @@ endif()
 # Subdirectories with their own CMakeLists.txt
 # ---------------------------------------------------------------------------
 if(NOT QISKIT_FORTRAN_ROOT STREQUAL "")
-  add_subdirectory(nuclear_dynamics)
+  add_subdirectory(nuclear_shell)
 endif()
 
 # ---------------------------------------------------------------------------

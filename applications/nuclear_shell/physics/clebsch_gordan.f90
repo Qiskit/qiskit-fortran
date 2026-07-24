@@ -91,7 +91,8 @@ contains
     !
     ! Arguments:
     !   j_max_2 : Maximum angular momentum (2*j_max)
-    !             For sd-shell: j_max_2 = 5 (j=5/2 for d5/2 orbital)
+    !             sd-shell: j_max_2 = 5  (j=5/2 for 0d5/2 orbital)
+    !             pf-shell: j_max_2 = 7  (j=7/2 for 0f7/2 orbital)
     !
     ! Algorithm:
     !   1. Estimate table size based on j_max
@@ -328,7 +329,7 @@ contains
     !
     ! Description:
     !   CG coefficients for coupling j with 1/2.
-    !   Uses the formula: CG(j,1/2,J;m,±1/2,M) = ±√[(j±m+1)/(2j+1)] for J=j+1/2
+    !   Uses the formula: CG(j,1/2,J;m,+/-1/2,M) = +/-√[(j+/-m+1)/(2j+1)] for J=j+1/2
     !                                           = ∓√[(j∓m)/(2j+1)]   for J=j-1/2
     !
     ! This covers:
@@ -505,13 +506,10 @@ contains
     !
     ! Filtering Logic:
     !   1. For each (hole, particle) pair:
-    !      - Extract j_hole and j_particle from orbital indices
+    !      - Extract j_hole and j_particle from orbital indices via orbital_registry
     !      - Check triangle inequality: |j_hole - j_particle| <= j_target <= j_hole + j_particle
     !      - Keep pair if condition satisfied
     !   2. This reduces pool size by factor of ~1/J̄max
-    !
-    ! Note: Assumes orbital indices encode j quantum numbers.
-    !       For sd-shell: orbitals 0-1 are s1/2, 2-5 are d3/2, 6-11 are d5/2
     subroutine filter_excitations_by_j(pool_pairs, pool_size, j_target_2, &
                                       filtered_pairs, filtered_size)
         integer(c_int), intent(in) :: pool_pairs(:,:)  ! (pool_size, 2): col1=hole, col2=particle
