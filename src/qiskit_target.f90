@@ -216,7 +216,7 @@ contains
     n = qk_target_num_instructions(self%ptr)
   end function tg_num_instructions
 
-  function tg_get_c_ptr(self) result(ptr)
+  pure function tg_get_c_ptr(self) result(ptr)
     class(Target), intent(in) :: self
     type(c_ptr) :: ptr
     ptr = self%ptr
@@ -313,7 +313,7 @@ contains
     call check_rc(qk_target_entry_set_name(self%ptr, trim(name) // c_null_char), "set_name")
   end subroutine ip_set_name
 
-  function ip_get_c_ptr(self) result(ptr)
+  pure function ip_get_c_ptr(self) result(ptr)
     class(InstructionProperties), intent(in) :: self
     type(c_ptr) :: ptr
     ptr = self%ptr

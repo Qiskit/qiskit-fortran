@@ -23,6 +23,7 @@ module qiskit
 #ifdef USE_SWIG_BINDINGS
   use qiskit_target
   use qiskit_transpiler
+  use qiskit_observable
 #endif
 
   implicit none (type, external)
@@ -34,6 +35,7 @@ module qiskit
   public :: Target, InstructionProperties
   public :: TranspileOptions, TranspileLayout
   public :: transpile
+  public :: Observable, ObsTerm, Complex64
 #endif
 
 end module qiskit
