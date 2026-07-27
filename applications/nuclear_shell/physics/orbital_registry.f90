@@ -24,7 +24,6 @@ module orbital_registry
   public :: reg_mj2
   public :: reg_parity
   public :: reg_tz
-  public :: reg_is_proton
   public :: reg_is_occupied
   public :: reg_proton_holes
   public :: reg_proton_virtuals
@@ -215,11 +214,6 @@ contains
     integer, intent(in) :: qubit_0
     reg_tz = tbl_tz(qubit_0 + 1)
   end function reg_tz
-
-  logical function reg_is_proton(qubit_0)
-    integer, intent(in) :: qubit_0
-    reg_is_proton = (tbl_tz(qubit_0 + 1) == -1)
-  end function reg_is_proton
 
   logical function reg_is_occupied(qubit_0)
     integer, intent(in) :: qubit_0

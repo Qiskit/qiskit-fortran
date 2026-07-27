@@ -48,7 +48,6 @@ module clebsch_gordan
     public :: init_cg_tables
     public :: filter_excitations_by_j
     public :: cleanup_cg_tables
-    public :: CGCoefficient
     public :: lookup_cg
     
     ! Type: CGCoefficient
@@ -75,7 +74,6 @@ module clebsch_gordan
     ! Module-level CG coefficient table
     type(CGCoefficient), allocatable :: cg_table(:)
     integer(c_int) :: n_cg_entries = 0
-    integer(c_int) :: j_max_2_stored = 0
     
     ! Constants
     real(c_double), parameter :: PI = 3.141592653589793d0
@@ -107,9 +105,6 @@ contains
         integer(c_int) :: estimated_size, idx
         real(c_double) :: cg_value
         logical :: is_valid
-        
-        ! Store maximum j for later reference
-        j_max_2_stored = j_max_2
         
         ! Estimate table size (conservative upper bound)
         ! For each j1, j2 pair, we have approx. (2j1+1)(2j2+1)(j1+j2+1) entries
@@ -652,7 +647,6 @@ contains
     subroutine cleanup_cg_tables()
         if (allocated(cg_table)) deallocate(cg_table)
         n_cg_entries = 0
-        j_max_2_stored = 0
     end subroutine cleanup_cg_tables
 
 end module clebsch_gordan

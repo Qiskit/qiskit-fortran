@@ -481,9 +481,10 @@ correct for any model space with at most 32 orbitals per species (pf-shell has 2
 avoids the silent truncation bug that would affect a unified 40-bit mask.
 
 **What has not been tested:** the full pipeline end-to-end for any pf-shell nucleus.
-The `init_cg_tables` call in both drivers is hardcoded to `5_c_int` (j_max = 5/2);
-for pf-shell this must be raised to `7_c_int` (j_max = 7/2 for 0f7/2). The `--shell pf`
-flag is accepted and routes through correctly, but no pf-shell run has been validated.
+Both drivers derive `j_max` dynamically from the loaded `.snt` file via
+`maxval(ms%orbitals%j2)`, so no manual adjustment is needed when switching shells.
+The `--shell pf` flag is accepted and routes through correctly, but no pf-shell
+run has been validated.
 
 ---
 
@@ -531,10 +532,16 @@ Ranked-partition operator selection -- the designated swap-point for the selecti
 strategy. A future gradient-driven or stochastic draw would replace the slice logic
 here without callers needing any change.
 
-- `select_ranked_slice` -- generic interface over `select_singles_slice` (2-col pool) and `select_doubles_slice` (4-col pool). Circuit `r` receives pool positions `[(r-1)*n+1 .. r*n]` mod pool size. Optional args: `max_depth`, `depth_already_used`.
+- `select_singles_slice(ranked_pool, n_pool, circuit_index, subset_size, layer_ops, layer_size [, max_depth])` -- returns the consecutive ranked slice for 1p1h pools. Circuit `r` receives pool positions `[(r-1)*n+1 .. r*n]` mod pool size.
+- `select_doubles_slice(ranked_pool, n_pool, circuit_index, subset_size, layer_ops, layer_size [, max_depth] [, depth_already_used])`, same for 2p2h pools; `depth_already_used` subtracts gates already placed by the singles layer from the depth budget.
+- Note: a single generic `select_ranked_slice` is not provided because Fortran generic resolution requires TKR distinctness; both procedures share identical argument types.
 
 ### `nuclear_gates.f90`
-Both gate primitives under stable names -- the one import for custom ansatz assembly.
+Stable re-export facade for users writing custom ansatz circuits outside this application.
+Re-exports the four gate primitives from `nuclear_ansatz` under fixed public names so that
+callers need not depend on `nuclear_ansatz` internals directly.
+**Not used by the built-in driver** (which imports `nuclear_ansatz` directly); intended as
+the stable entry point for downstream code.
 
 - `create_hf_reference(circuit, n_qubits, n_protons, n_neutrons)` -- place X gates on HF-occupied orbitals.
 - `add_single_excitation(circuit, hole_qubit, virtual_qubit, theta)` -- Givens rotation (4 CX + 2 RY).
@@ -568,7 +575,6 @@ Subspace Hamiltonian construction, diagonalization, and operator pool management
 - `seed_double_angles` -- theta = 1/2*arctan(2*V_ms / Delta_EN), denominator = H_ref - H_exc including spectators and pair self-interaction.
 - `verify_angle_formulas` -- sanity-check: for each pair/quadruple builds explicit 2x2 Hamiltonian and verifies seeded angles match exact diagonalization to within tolerance.
 - `build_subspace_hamiltonian` -- builds H restricted to pooled QPU (quantum processing unit) bitstrings; OMP (OpenMP) COLLAPSE(2).
-- `build_sd_hamiltonian` -- full Mj=0 even-parity Hamiltonian for oracle computation.
 - `diagonalize_exact_complex` -- LAPACK zheev (complex Hermitian eigensolver); returns lowest 1-4 eigenvalues.
 
 ### `clebsch_gordan.f90`
@@ -577,8 +583,8 @@ Subspace Hamiltonian construction, diagonalization, and operator pool management
 
 ### `usdb_reader.f90` / `orbital_registry.f90`
 - `read_usdb_file("USDB.snt", ms, status)` -- parses the Brown-Richter USDB interaction (6 SPEs (single-particle energies), 158 TBMEs (two-body matrix elements), 16O inert core).
-- `init_registry_sd_shell(n_protons, n_neutrons)` -- expands 3 sd-shell j-shells into 24 m-substates (magnetic substates).
-- `init_registry_from_snt(ms, n_protons, n_neutrons)` -- same, using already-loaded model space.
+- `init_registry_from_snt(ms, n_protons, n_neutrons)` -- primary initializer; expands all orbitals in the loaded model space into m-substates and fills the HF reference.
+- `init_registry_sd_shell(n_protons, n_neutrons)` -- convenience wrapper: loads `USDB.snt` then calls `init_registry_from_snt`. Used by the fallback path in `create_hf_reference` when no `.snt` path is supplied.
 
 ---
 
