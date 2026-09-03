@@ -377,6 +377,7 @@ contains
         type(sp_state), allocatable :: sp(:)
         integer :: n_sp, n_sp_p
         integer, allocatable :: sd_basis(:,:)   ! (n_sp, n_kept)  -  candidate occupations
+        integer, allocatable :: sd_tmp(:,:)     ! scratch for the dedup gather (see below)
         integer :: i, j, alpha, beta, idx, b, n_unique
         integer, allocatable :: unique_map(:)   ! unique_map(i) = kept_idx index for basis col i
         real(8) :: h_elem
@@ -393,6 +394,15 @@ contains
 
         if (n_qubits /= n_sp) then
             print *, "ERROR build_subspace_hamiltonian: n_qubits /= n_sp", n_qubits, n_sp
+            status = -1
+            deallocate(sp)
+            return
+        end if
+
+        ! The dedup below packs one occupation vector into a single 64-bit key,
+        ! so the model space must fit in 64 single-particle states.
+        if (n_sp > 64) then
+            print *, "ERROR build_subspace_hamiltonian: n_sp > 64 exceeds packed key width", n_sp
             status = -1
             deallocate(sp)
             return
@@ -430,24 +440,41 @@ contains
             tmp_key = keys(sort_idx(i))
             tmp_int = sort_idx(i)
             ki = i - 1
-            do while (ki >= 1 .and. keys(sort_idx(ki)) > tmp_key)
+            ! Fortran does not guarantee short-circuit .and., so the ki >= 1 bound
+            ! check must gate the sort_idx(ki) access structurally.
+            do while (ki >= 1)
+                if (keys(sort_idx(ki)) <= tmp_key) exit
                 sort_idx(ki + 1) = sort_idx(ki)
                 ki = ki - 1
             end do
             sort_idx(ki + 1) = tmp_int
         end do
 
-        ! Linear scan of sorted order: first occurrence of each key is unique
+        ! Linear scan of sorted order: first occurrence of each key is unique.
+        ! This pass only records indices.
         n_unique = 0
         do i = 1, n_kept
             ki = sort_idx(i)
-            if (i == 1 .or. keys(ki) /= keys(sort_idx(i - 1))) then
-                n_unique = n_unique + 1
-                ! Copy occupation vector into the first n_unique slots of sd_basis
-                sd_basis(:, n_unique) = sd_basis(:, ki)
-                unique_map(n_unique) = ki
+            if (i > 1) then
+                if (keys(ki) == keys(sort_idx(i - 1))) cycle
             end if
+            n_unique = n_unique + 1
+            unique_map(n_unique) = ki
         end do
+
+        ! Gather the unique occupations into the leading n_unique columns.
+        ! This MUST go through scratch rather than compacting sd_basis in place:
+        ! the sources are visited in sorted order (unique_map is a permutation of
+        ! a subset of 1..n_kept), so for any non-identity order a source column
+        ! can already have been overwritten as an earlier destination, e.g. with
+        ! sort_idx = [2,3,1], writing column 1 on step 1 destroys the source that
+        ! step 3 needs. That silently corrupts H_matrix.
+        allocate(sd_tmp(n_sp, n_unique))
+        do i = 1, n_unique
+            sd_tmp(:, i) = sd_basis(:, unique_map(i))
+        end do
+        sd_basis(:, 1:n_unique) = sd_tmp
+        deallocate(sd_tmp)
 
         deallocate(keys, sort_idx)
 
