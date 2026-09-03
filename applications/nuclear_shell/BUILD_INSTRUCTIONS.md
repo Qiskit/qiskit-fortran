@@ -36,12 +36,13 @@ Both gfortran and flang work. Pick one:
 brew install gcc cmake
 
 # or flang (LLVM-based)
-brew install llvm cmake
+brew install flang cmake
 ```
 
 Verify:
 ```bash
 gfortran --version   # GNU Fortran 11+
+flang --version      # LLVM Fortran 20+
 cmake --version      # 3.20+
 ```
 
@@ -89,7 +90,7 @@ cmake -B build \
       -DUSE_SWIG_BINDINGS=ON \
       -DCMAKE_BUILD_TYPE=Release
 
-cmake --build build -j$(nproc)
+cmake --build build -j$(sysctl -n hw.ncpu)
 ```
 
 This produces `build/libqiskit-fortran.a` and `.mod` files under `build/modules/`,
