@@ -97,6 +97,51 @@ endif()
 set(CMAKE_BUILD_RPATH "${_rpath}")
 set(CMAKE_INSTALL_RPATH "${_rpath}")
 
+# ---------------------------------------------------------------------------
+# Fortran preprocessing
+# ---------------------------------------------------------------------------
+# Sources use #ifdef (USE_GSL, USE_RUNTIME) but are lowercase .f90, which
+# neither gfortran nor flang preprocesses by default: gfortran warns and
+# compiles both branches, flang silently takes #else, as it sits after
+# add_subdirectory(nuclear_shell) and behind an early return().
+if(CMAKE_Fortran_COMPILER_ID MATCHES "GNU|Flang")
+    set(_fpp_flag -cpp)
+elseif(CMAKE_Fortran_COMPILER_ID MATCHES "Intel|NVHPC|PGI")
+    set(_fpp_flag -fpp)
+else()
+    set(_fpp_flag "")
+    message(WARNING
+        "Unrecognised Fortran compiler '${CMAKE_Fortran_COMPILER_ID}': cannot "
+        "enable the C preprocessor.  USE_GSL and USE_RUNTIME will be ignored.")
+endif()
+
+# ---------------------------------------------------------------------------
+# IBM Runtime module availability
+# ---------------------------------------------------------------------------
+# The driver's --runtime path needs qiskit_runtime.mod, which qiskit-fortran
+# only builds under -DQISKIT_FORTRAN_RUNTIME=ON, and the runtime library, which
+# the imported qiskit-fortran target does not re-export.  Require both, so a
+# half-configured tree degrades to a working no-runtime build instead of
+# failing at compile time (missing .mod) or link time (undefined symbols).
+set(_have_runtime_mod OFF)
+if(EXISTS "${QISKIT_FORTRAN_ROOT}/modules/qiskit_runtime.mod" AND QISKIT_RUNTIME_LIB)
+    set(_have_runtime_mod ON)
+    message(STATUS "qiskit_runtime module + library found  -  --runtime mode enabled")
+else()
+    if(NOT EXISTS "${QISKIT_FORTRAN_ROOT}/modules/qiskit_runtime.mod")
+        message(STATUS
+            "qiskit_runtime.mod not found under ${QISKIT_FORTRAN_ROOT}/modules "
+            "(rebuild qiskit-fortran with -DQISKIT_FORTRAN_RUNTIME=ON to get it)")
+    endif()
+    if(NOT QISKIT_RUNTIME_LIB)
+        message(STATUS
+            "libqiskit_ibm_runtime not found (pass -DQISKIT_RUNTIME_ROOT=... to get it)")
+    endif()
+    message(STATUS
+        "Building nuclear_shell_driver without --runtime support  -  test mode and "
+        "--bitstrings-dir path are unaffected")
+endif()
+
 # Single unified library: nuclear_shell_lib
 # Contains all physics modules, ansatz, and driver
 add_library(nuclear_shell_lib
@@ -120,6 +165,14 @@ set_target_properties(nuclear_shell_lib PROPERTIES
 target_include_directories(nuclear_shell_lib PRIVATE
     ${CMAKE_BINARY_DIR}/modules
 )
+
+target_compile_options(nuclear_shell_lib PRIVATE
+    $<$<COMPILE_LANGUAGE:Fortran>:${_fpp_flag}>
+)
+
+if(_have_runtime_mod)
+    target_compile_definitions(nuclear_shell_lib PRIVATE USE_RUNTIME)
+endif()
 
 target_link_libraries(nuclear_shell_lib PRIVATE
     qiskit-fortran
@@ -170,6 +223,16 @@ target_include_directories(nuclear_shell_driver PRIVATE
     ${CMAKE_BINARY_DIR}/modules
 )
 
+# The driver source is compiled a second time here, so it needs the same
+# preprocessor flag and macros as the copy inside nuclear_shell_lib.
+target_compile_options(nuclear_shell_driver PRIVATE
+    $<$<COMPILE_LANGUAGE:Fortran>:${_fpp_flag}>
+)
+
+if(_have_runtime_mod)
+    target_compile_definitions(nuclear_shell_driver PRIVATE USE_RUNTIME)
+endif()
+
 if(CMAKE_BUILD_RPATH)
     set_target_properties(nuclear_shell_driver PROPERTIES
         BUILD_RPATH "${CMAKE_BUILD_RPATH}"
@@ -192,6 +255,10 @@ if(CMAKE_Fortran_COMPILER_SUPPORTS_F2008_COARRAYS)
 
     target_include_directories(nuclear_shell_parallel PRIVATE
         ${CMAKE_BINARY_DIR}/modules
+    )
+
+    target_compile_options(nuclear_shell_parallel PRIVATE
+        $<$<COMPILE_LANGUAGE:Fortran>:${_fpp_flag}>
     )
 
     if(CMAKE_BUILD_RPATH)

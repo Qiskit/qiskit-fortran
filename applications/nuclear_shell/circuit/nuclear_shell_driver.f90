@@ -25,7 +25,11 @@ module nuclear_shell_driver
     use qiskit_circuit
     use qiskit_target
     use qiskit_transpiler
+#ifdef USE_RUNTIME
+    ! Only available when qiskit-fortran was built with
+    ! -DQISKIT_FORTRAN_RUNTIME=ON; see BUILD_INSTRUCTIONS.md.
     use qiskit_runtime
+#endif
     use nuclear_ansatz
     use nuclear_selection, only: select_singles_slice, select_doubles_slice
     use symmetry_filter, only: filter_bitstrings, setup_single_particle_data, &
@@ -48,6 +52,7 @@ module nuclear_shell_driver
 
 contains
 
+#ifdef USE_RUNTIME
     subroutine extract_bitstrings_from_sampler(res, bitstrings, n_qubits)
         type(RtSamplerResult), intent(in) :: res
         character(kind=c_char), intent(out) :: bitstrings(:,:)
@@ -93,6 +98,7 @@ contains
             end if
         end do
     end subroutine extract_bitstrings_from_sampler
+#endif
 
 
     ! =========================================================================
@@ -149,12 +155,14 @@ contains
         character(len=256) :: snt_str
 
         type(QuantumCircuit) :: circuit, qc_transpiled
+        type(Target) :: backend_target
+#ifdef USE_RUNTIME
         type(RtService) :: service
         type(RtBackendList) :: backends
         type(RtBackend) :: backend
-        type(Target) :: backend_target
         type(RtJob) :: job
         type(RtSamplerResult) :: res
+#endif
 
         character(kind=c_char), allocatable :: bitstrings(:,:)
         character(kind=c_char), allocatable :: pool_bs(:,:)
@@ -216,6 +224,16 @@ contains
 
         do_runtime = .false.
         if (present(use_runtime)) do_runtime = use_runtime
+#ifndef USE_RUNTIME
+        if (do_runtime) then
+            print *, "ERROR: this build has no IBM Runtime support, so --runtime"
+            print *, "is unavailable.  To enable it, rebuild qiskit-fortran with"
+            print *, "-DQISKIT_FORTRAN_RUNTIME=ON and DQISKIT_RUNTIME_ROOT=/path/to/qiskit-ibm-runtime-c,"
+            print *, "then reconfigure applications/ with the same -DQISKIT_RUNTIME_ROOT."
+            print *, "See BUILD_INSTRUCTIONS.md steps 5-8."
+            error stop 1
+        end if
+#endif
         do_save_bitstrings = .false.
         if (present(save_bitstrings)) do_save_bitstrings = save_bitstrings
 
@@ -348,6 +366,7 @@ contains
         print *, ""
 
         ! --- 4. Connect to IBM Runtime (if --runtime) ----------------------------
+#ifdef USE_RUNTIME
         if (do_runtime) then
             print *, "Connecting to IBM Quantum Runtime..."
             call service%connect()
@@ -360,6 +379,7 @@ contains
             call backend%get_target(service, backend_target)
             print *, ""
         end if
+#endif
 
         call system_clock(count_rate=tick_rate)
         min_energy = huge(1.0d0)
@@ -438,6 +458,7 @@ contains
 
             ! --- 5. Transpile and submit to IBM Runtime (or generate test shots) ----
             if (do_runtime) then
+#ifdef USE_RUNTIME
                 block
                     type(TranspileOptions) :: topts
                     call topts%init(optimization_level=0)
@@ -471,6 +492,7 @@ contains
                     close(funit)
                     print '("    Written: ",A)', trim(bsfname)
                 end block
+#endif
             else
                 call generate_test_bitstrings(n_qubits, shots, n_protons, n_neutrons, bitstrings)
                 if (do_save_bitstrings) then

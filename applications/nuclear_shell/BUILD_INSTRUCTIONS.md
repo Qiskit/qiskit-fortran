@@ -97,9 +97,24 @@ This produces `build/libqiskit-fortran.a` and `.mod` files under `build/modules/
 including the SWIG-generated `qiskit_swigf.mod` required by the transpiler and
 target modules.
 
+**If you want `--runtime` mode (IBM Quantum Platform):** the `qiskit_runtime` module is
+only built when you ask for it, so do step 6 *first*, then configure with two
+extra flags:
+
+```bash
+cmake -B build \
+      -DQISKIT_ROOT=/absolute/path/to/qiskit \
+      -DUSE_SWIG_BINDINGS=ON \
+      -DQISKIT_FORTRAN_RUNTIME=ON \
+      -DQISKIT_RUNTIME_ROOT=/absolute/path/to/qiskit-ibm-runtime-c \
+      -DCMAKE_BUILD_TYPE=Release
+```
+
 ### 6. (Optional) Build qiskit-ibm-runtime-c
 
-Required only for `--runtime` mode (submitting to IBM hardware).
+Required only for `--runtime` mode (submitting to IBM hardware). Build this
+*before* step 5 if you want runtime support, since step 5 needs
+`-DQISKIT_RUNTIME_ROOT` to point at the result.
 
 ```bash
 gh repo clone Qiskit/qiskit-ibm-runtime-c
@@ -125,8 +140,12 @@ brew install gsl
 
 From the `applications/` directory of this repo:
 
+Configure step 8 to match step 5. If step 5 was built without
+`-DQISKIT_FORTRAN_RUNTIME=ON`, use the first form; `--runtime` will be
+unavailable but everything else works.
+
 ```bash
-# Without runtime support (test mode only):
+# Without runtime support:
 cmake -B build \
   -DQISKIT_FORTRAN_ROOT=/path/to/qiskit-fortran/build \
   -DQISKIT_ROOT=/path/to/qiskit \
@@ -135,7 +154,8 @@ cmake -B build \
 cmake --build build --target nuclear_shell_driver
 ```
 
-With IBM Runtime support (`--runtime` mode):
+With IBM Runtime support (`--runtime` mode) — requires that step 5 was
+configured with `-DQISKIT_FORTRAN_RUNTIME=ON`:
 
 ```bash
 cmake -B build \
@@ -148,7 +168,20 @@ cmake --build build --target nuclear_shell_driver
 ```
 
 The CMake build system detects LAPACK (Accelerate), OpenMP, and GSL automatically
-on macOS. No extra flags are needed.
+on macOS. No extra flags are needed. Configure prints which optional features
+were enabled, e.g.:
+
+```
+-- GSL found - version 2.8
+-- qiskit_runtime module + library found  -  --runtime mode enabled
+```
+
+or, for a build without runtime support:
+
+```
+-- libqiskit_ibm_runtime not found (pass -DQISKIT_RUNTIME_ROOT=... to get it)
+-- Building nuclear_shell_driver without --runtime support  -  test mode and --bitstrings-dir path are unaffected
+```
 
 ### 9. Run (test mode  -  no credentials needed)
 
@@ -268,6 +301,7 @@ ever appears in source code or command-line flags.
 | `QISKIT_FORTRAN_ROOT` | (required) | Path to qiskit-fortran build directory |
 | `QISKIT_ROOT` | (required) | Path to Qiskit repo after `make c` |
 | `QISKIT_RUNTIME_ROOT` | (optional) | Path to qiskit-ibm-runtime-c for `--runtime` mode |
+| `QISKIT_FORTRAN_RUNTIME` | `OFF` | **qiskit-fortran build only** (step 5). Builds the `qiskit_runtime` module that `--runtime` needs. |
 | `CMAKE_BUILD_TYPE` | (none) | `Release` for `-O3`, `Debug` for `-g -O0` |
 
 To use a specific compiler explicitly:
@@ -460,6 +494,13 @@ elsewhere:
 ```bash
 ln -sf /path/to/applications/nuclear_shell/data/USDB.snt ./USDB.snt
 ```
+
+### `Cannot open module file 'qiskit_runtime.mod'`
+
+The qiskit-fortran build in step 5 was configured without
+`-DQISKIT_FORTRAN_RUNTIME=ON`, so the module does not exist. Either rebuild
+qiskit-fortran with that flag (see step 5) or reconfigure `applications/`
+without `-DQISKIT_RUNTIME_ROOT`, which compiles the `--runtime` path out.
 
 ### Clean build
 
