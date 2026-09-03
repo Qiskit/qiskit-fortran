@@ -22,25 +22,20 @@ energies adjust automatically at runtime from the loaded `.snt` interaction file
 Required only for `--runtime` mode. Skip if you only want to run in test mode
 (see [Test mode  -  no credentials needed](#test-mode--no-credentials-needed) below).
 
-Create or edit `~/.qiskit/qiskit-ibm.json`:
-
-```json
-{
-  "default-ibm-quantum": {
-    "channel": "ibm_quantum",
-    "token": "YOUR_IBM_QUANTUM_TOKEN_HERE",
-    "url": "https://auth.quantum-computing.ibm.com/api"
-  }
-}
-```
-
-Get your token from [IBM Quantum Platform](https://quantum.ibm.com/).
-Alternatively, set environment variables:
+Let Qiskit write the credentials file:
 
 ```bash
-export QISKIT_IBM_TOKEN="YOUR_TOKEN_HERE"
-export QISKIT_IBM_CHANNEL="ibm_quantum"
+pip install qiskit-ibm-runtime
+python3 -c 'from qiskit_ibm_runtime import QiskitRuntimeService; \
+QiskitRuntimeService.save_account(channel="ibm_quantum_platform", \
+token="YOUR_API_KEY", instance="YOUR_CRN_OR_INSTANCE", set_as_default=True)'
 ```
+
+This writes `~/.qiskit/qiskit-ibm.json` with a `default-ibm-quantum-platform`
+entry. `qiskit-ibm-runtime-c` reads that file and accepts only the account keys
+`default`, `default-ibm-quantum-platform`, and `default-ibm-cloud`. The token is
+authenticated against IBM Cloud IAM, so it must be an IBM Quantum Platform API
+key from [quantum.cloud.ibm.com](https://quantum.cloud.ibm.com/).
 
 The driver loads credentials automatically via `service%connect()`  -  no token
 value ever appears in source code or command-line flags.
@@ -118,8 +113,9 @@ cd build/nuclear_shell
 ./nuclear_shell_driver --runtime --protons 4 --neutrons 2 --circuits 11 --shots 4096
 ```
 
-IBM Runtime credentials must be set as environment variables
-`QISKIT_IBM_TOKEN` and `QISKIT_IBM_CHANNEL`.
+IBM Runtime credentials come from `~/.qiskit/qiskit-ibm.json` (see
+[IBM Quantum Configuration](#ibm-quantum-configuration) above); environment
+variables are not consulted.
 
 ---
 

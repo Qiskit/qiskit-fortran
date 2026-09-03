@@ -12,7 +12,7 @@ fresh machine with no prior Qiskit or Fortran setup.
 | Fortran compiler | gfortran 11+ or flang 22+ | Both tested on macOS arm64 |
 | CMake | ≥ 3.20 | |
 | Rust toolchain | stable | To build the Qiskit C extension |
-| Qiskit (Python) | 2.2+ | Required so the C extension build works |
+| Qiskit (Python) | 2.4 | Must be installed so the cext build works |
 | LAPACK | any | macOS: Accelerate (automatic); Linux: `liblapack-dev` |
 
 **Optional:**
@@ -268,26 +268,31 @@ export LD_LIBRARY_PATH="/path/to/qiskit/dist/c/lib:$LD_LIBRARY_PATH"
 
 Required only for `--runtime` mode.
 
-Create or edit `~/.qiskit/qiskit-ibm.json`:
+The simplest way to write a credentials file `qiskit-ibm-runtime-c` can read is
+to let Qiskit write it:
+
+```bash
+pip install qiskit-ibm-runtime
+python3 -c 'from qiskit_ibm_runtime import QiskitRuntimeService; \
+QiskitRuntimeService.save_account(channel="ibm_quantum_platform", \
+token="YOUR_API_KEY", instance="YOUR_CRN_OR_INSTANCE", set_as_default=True)'
+```
+
+That produces `~/.qiskit/qiskit-ibm.json` with a `default-ibm-quantum-platform`
+entry, which is one of the three key names the client looks for:
 
 ```json
 {
-  "default-ibm-quantum": {
-    "channel": "ibm_quantum",
-    "token": "YOUR_IBM_QUANTUM_TOKEN_HERE",
-    "url": "https://auth.quantum-computing.ibm.com/api"
+  "default-ibm-quantum-platform": {
+    "channel": "ibm_quantum_platform",
+    "token": "YOUR_API_KEY",
+    "instance": "YOUR_CRN_OR_INSTANCE",
+    "url": "https://quantum.cloud.ibm.com/api/v1"
   }
 }
 ```
 
-Get your token from [IBM Quantum Platform](https://quantum.ibm.com/).
-
-Alternatively, set environment variables:
-
-```bash
-export QISKIT_IBM_TOKEN="YOUR_TOKEN_HERE"
-export QISKIT_IBM_CHANNEL="ibm_quantum"
-```
+Get an API key from [IBM Quantum Platform](https://quantum.cloud.ibm.com/).
 
 The driver loads credentials automatically via `service%connect()`  -  no token
 ever appears in source code or command-line flags.
