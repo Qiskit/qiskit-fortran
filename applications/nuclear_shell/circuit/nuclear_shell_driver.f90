@@ -228,7 +228,7 @@ contains
         if (do_runtime) then
             print *, "ERROR: this build has no IBM Runtime support, so --runtime"
             print *, "is unavailable.  To enable it, rebuild qiskit-fortran with"
-            print *, "-DQISKIT_FORTRAN_RUNTIME=ON and DQISKIT_RUNTIME_ROOT=/path/to/qiskit-ibm-runtime-c,"
+            print *, "-DQISKIT_FORTRAN_RUNTIME=ON and -DQISKIT_RUNTIME_ROOT=/path/to/qiskit-ibm-runtime-c,"
             print *, "then reconfigure applications/ with the same -DQISKIT_RUNTIME_ROOT."
             print *, "See BUILD_INSTRUCTIONS.md steps 5-8."
             error stop 1

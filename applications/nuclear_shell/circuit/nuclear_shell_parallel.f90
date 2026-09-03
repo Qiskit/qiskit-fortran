@@ -133,7 +133,7 @@ program nuclear_shell_parallel
                 case ("sd")
                     snt_file = "USDB.snt"
                 case ("pf")
-                    snt_file = "GXPF1A.snt"
+                    snt_file = "gxpf1.snt"
                 case default
                     if (me == 1) write(*,'("ERROR: unknown shell: ",A)') trim(shell_arg)
                     error stop "nuclear_shell_parallel: unsupported --shell value"
@@ -189,7 +189,7 @@ program nuclear_shell_parallel
 
     call init_registry_from_snt(ms, int(n_protons_arg, c_int), int(n_neutrons_arg, c_int))
     n_qubits = int(reg_n_qubits(), c_int)
-    call setup_single_particle_data(n_qubits, trim(shell_arg)//c_null_char)
+    call setup_single_particle_data(n_qubits, trim(snt_file)//c_null_char)
     ! Derive j_max from the loaded model space so pf-shell (j_max=7/2) works
     ! automatically without manual edits to the source literal.
     jmax2_derived = int(maxval(ms%orbitals%j2), c_int)

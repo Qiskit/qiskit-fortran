@@ -240,10 +240,41 @@ if(CMAKE_BUILD_RPATH)
         BUILD_WITH_INSTALL_RPATH OFF)
 endif()
 
+# ---------------------------------------------------------------------------
+# Coarray detection
+# ---------------------------------------------------------------------------
+# CMake defines no CMAKE_Fortran_COMPILER_SUPPORTS_F2008_COARRAYS variable (only
+# ..._SUPPORTS_F90), so testing it always skipped nuclear_shell_parallel, even
+# under gfortran.  Probe by compiling and linking a real coarray program.
+include(CheckFortranSourceCompiles)
+set(_coarray_flag "")
+set(_coarray_libs "")
+if(CMAKE_Fortran_COMPILER_ID MATCHES "GNU")
+    set(_coarray_flag "-fcoarray=lib")
+    # libcaf_single ships with gfortran; ask the compiler where it is.
+    execute_process(
+        COMMAND "${CMAKE_Fortran_COMPILER}" -print-file-name=libcaf_single.a
+        OUTPUT_VARIABLE _caf_lib OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET)
+    if(_caf_lib AND EXISTS "${_caf_lib}")
+        set(_coarray_libs "${_caf_lib}")
+    endif()
+endif()
+set(CMAKE_REQUIRED_FLAGS "${_coarray_flag}")
+set(CMAKE_REQUIRED_LIBRARIES "${_coarray_libs}")
+check_fortran_source_compiles("
+program probe
+  integer :: a[*]
+  a = this_image()
+  sync all
+end program
+" NUCLEAR_SHELL_HAVE_COARRAYS SRC_EXT f90)
+unset(CMAKE_REQUIRED_FLAGS)
+unset(CMAKE_REQUIRED_LIBRARIES)
+
 # Build nuclear_shell_parallel executable (requires coarray support).
 # Each coarray image processes a disjoint partition of per-circuit bitstring
 # files for the classical post-processing (filter -> Hamiltonian -> diag).
-if(CMAKE_Fortran_COMPILER_SUPPORTS_F2008_COARRAYS)
+if(NUCLEAR_SHELL_HAVE_COARRAYS)
     message(STATUS "Coarray support detected  -  building nuclear_shell_parallel")
     add_executable(nuclear_shell_parallel
         circuit/nuclear_shell_parallel.f90
@@ -259,7 +290,13 @@ if(CMAKE_Fortran_COMPILER_SUPPORTS_F2008_COARRAYS)
 
     target_compile_options(nuclear_shell_parallel PRIVATE
         $<$<COMPILE_LANGUAGE:Fortran>:${_fpp_flag}>
+        $<$<COMPILE_LANGUAGE:Fortran>:${_coarray_flag}>
     )
+
+    if(_coarray_libs)
+        target_link_libraries(nuclear_shell_parallel ${_coarray_libs})
+    endif()
+    target_link_options(nuclear_shell_parallel PRIVATE ${_coarray_flag})
 
     if(CMAKE_BUILD_RPATH)
         set_target_properties(nuclear_shell_parallel PROPERTIES

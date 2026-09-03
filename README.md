@@ -61,7 +61,7 @@ cmake -B build \
       -DQISKIT_ROOT=/absolute/path/to/qiskit \
       -DCMAKE_BUILD_TYPE=Release
 
-cmake --build build -j$(nproc)
+cmake --build build --parallel
 ```
 
 ### CMakeLists.txt Features
@@ -79,7 +79,7 @@ For a Debug build with runtime bounds checking:
 cmake -B build-debug \
       -DQISKIT_ROOT=/absolute/path/to/qiskit \
       -DCMAKE_BUILD_TYPE=Debug
-cmake --build build-debug -j$(nproc)
+cmake --build build-debug --parallel
 ```
 
 ### Build Options: Manual vs SWIG Bindings

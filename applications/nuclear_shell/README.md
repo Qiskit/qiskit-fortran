@@ -182,15 +182,6 @@ To re-run only classical post-processing on those files (no QPU connection):
     --protons 2 --neutrons 2
 ```
 
-The Python baseline (in `build/benchmark/`) mirrors the same pipeline and
-processes the identical saved files, enabling apples-to-apples timing comparison:
-
-```bash
-python3 build/benchmark/nuclear_shell_baseline.py \
-    --bitstrings-dir /path/to/bitstrings_dir \
-    --protons 2 --neutrons 2 --ham-workers -1
-```
-
 ---
 
 ## Driver flags
@@ -463,7 +454,9 @@ The code is not sd-shell-specific. All physics routines (`reg_mj2`, `reg_parity`
 `build_subspace_hamiltonian`, `v_ms_elem`, the CG tables) are fully general and derive
 orbital structure from the `.snt` file at runtime. To run a pf-shell nucleus (e.g. 48Ca):
 
-1. Place `GXPF1A.snt` (or another pf-shell interaction) in the working directory.
+1. Place `gxpf1.snt` in the working directory -- that is the filename `--shell pf`
+   looks for. No pf-shell interaction ships with this repo; obtain one (e.g. from
+   KSHELL) and either name it `gxpf1.snt` or pass `--snt <file>.snt` instead.
 2. Pass `--shell pf` to the driver. The flag is plumbed through to
    `setup_single_particle_data` and `init_registry_from_file`.
 3. Adjust `--protons`/`--neutrons` for the valence particle count above the 40Ca core.

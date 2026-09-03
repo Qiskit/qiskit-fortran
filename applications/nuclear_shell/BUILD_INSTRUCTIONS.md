@@ -357,7 +357,6 @@ target:
 # From applications/
 cmake -B build \
   -DCMAKE_Fortran_COMPILER=gfortran \
-  -DCMAKE_Fortran_FLAGS="-fcoarray=lib" \
   -DQISKIT_FORTRAN_ROOT=/path/to/qiskit-fortran/build \
   -DQISKIT_ROOT=/path/to/qiskit \
   -DCMAKE_BUILD_TYPE=Release
@@ -365,15 +364,15 @@ cmake -B build \
 cmake --build build --target nuclear_shell_parallel
 ```
 
-CMake prints `Coarray support detected  -  building nuclear_shell_parallel`
-during configure when this succeeds.
+Configure prints:
 
-> **Note:** passing `-DCMAKE_Fortran_FLAGS="-fcoarray=lib"` makes gfortran's
-> own compiler-check program require `libcaf_single` at link time, so CMake
-> must find it automatically. If configure fails with an error, 
-> install `libgfortran` or just build the physics
-> library with flang (omitting `-DCMAKE_Fortran_FLAGS`) and compile the
-> parallel source separately (see below).
+```
+-- Performing Test NUCLEAR_SHELL_HAVE_COARRAYS - Success
+-- Coarray support detected  -  building nuclear_shell_parallel
+```
+
+Under flang the probe fails and the target is skipped, which is expected  -
+flang 22 does not implement `-fcoarray`.
 
 ### Compiling the parallel source standalone
 
