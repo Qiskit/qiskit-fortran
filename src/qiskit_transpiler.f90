@@ -70,6 +70,7 @@ module qiskit_transpiler
     procedure, public :: num_output_qubits => layout_num_output_qubits
     procedure, public :: get_initial_layout => layout_get_initial_layout
     procedure, public :: get_final_layout => layout_get_final_layout
+    procedure, public :: from_ptr => layout_from_ptr
     final :: layout_destroy
   end type TranspileLayout
 
@@ -111,6 +112,17 @@ contains
       self%ptr = c_null_ptr
     end if
   end subroutine layout_destroy
+
+  ! layout_from_ptr: adopt an existing C pointer as an Owning handle.
+  ! Frees the old pointer first (if any) to prevent a leak when reassigning.
+  ! Used by transpile() to hand the result layout back to the caller without
+  ! exposing the raw QkTranspileResult type in the public interface.
+  subroutine layout_from_ptr(self, ptr)
+    class(TranspileLayout), intent(inout) :: self
+    type(c_ptr), intent(in) :: ptr
+    if (c_associated(self%ptr)) call qk_transpile_layout_free(self%ptr)
+    self%ptr = ptr
+  end subroutine layout_from_ptr
 
   !> @brief Get number of input (logical) qubits in layout
   !> @return number of input qubits
@@ -202,17 +214,17 @@ contains
 
   !> @brief Transpile a quantum circuit for target hardware
   !> @param circuit input quantum circuit to transpile
+  !> @param transpiled_circuit output: transpiled circuit owned by the caller
   !> @param backend target hardware (required; C API does not accept a null target)
   !> @param options optional transpilation options
   !> @param layout optional output: qubit layout after transpilation (freed automatically via `final`)
-  !> @return new transpiled circuit; input is unchanged
-  function transpile(circuit, backend, options, layout) result(transpiled_circuit)
+  subroutine transpile(circuit, transpiled_circuit, backend, options, layout)
     use qiskit_swigf, only : qk_transpile
-    type(QuantumCircuit), intent(in) :: circuit
-    type(Target), intent(in), optional :: backend
+    type(QuantumCircuit), intent(in)  :: circuit
+    type(QuantumCircuit), intent(out) :: transpiled_circuit
+    type(Target),         intent(in), optional :: backend
     type(TranspileOptions), intent(in), optional :: options
-    type(TranspileLayout), intent(out), optional :: layout
-    type(QuantumCircuit) :: transpiled_circuit
+    type(TranspileLayout),  intent(out), optional :: layout
 
     type(QkTranspileResult) :: result
     type(QkTranspileOptions) :: c_opts
@@ -248,6 +260,6 @@ contains
     else
       temp_layout%ptr = result%layout
     end if
-  end function transpile
+  end subroutine transpile
 
 end module qiskit_transpiler
