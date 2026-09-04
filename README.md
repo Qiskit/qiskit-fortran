@@ -20,11 +20,25 @@ qiskit.f90 -> qiskit_circuit.f90 -> qiskit_c_api_circuit.f90 -> libqiskit (C/Rus
 
 | Requirement | Minimum version | Notes |
 |---|---|---|
-| Platform | macOS 13+ | Tested; Linux (glibc) should work but untested; Windows not supported |
-| Fortran compiler | gfortran 11+ or flang 22+ | Tested and verified: gfortran 11-15, flang 22.1.4 on macOS arm64; Needs Fortran 2018 (`FINAL`, `ERROR STOP` with message, `C_LOC`) |
+| Platform | macOS or Linux | See [Supported platforms](#supported-platforms) — Windows is not supported |
+| Fortran compiler | gfortran 11+ or flang 22+ | Needs Fortran 2018 (`FINAL`, `ERROR STOP` with message, `C_LOC`) |
 | CMake | 3.20 | |
 | Qiskit (Python) | 2.4 | Must be installed so the cext build works |
 | Rust toolchain | stable | Needed only to build the C extension |
+
+---
+
+## Supported platforms
+
+Validated on **macOS 15.2 (Darwin 24.2), arm64**, with both gfortran 15.2.0 and LLVM
+flang 22.1.4: full `test_qiskit` suite passing (304/304 assertions) and `nuclear_shell`
+reproducing its reference energies. Under flang, `nuclear_shell_parallel` is skipped -
+flang 22 has no coarray support. macOS x86_64 and Linux are untested but expected to
+work: the only architectural assumptions are LP64 C interop and IEEE-754 binary64, which
+hold on both. Windows is not supported. The C API floor is Qiskit **2.4.0**
+`build.sh` clones tag 2.4.2, [Step 1](#step-1--build-the-qiskit-c-extension) clones `main`,
+and `qiskit-ibm-runtime-c` fetches its own Qiskit at `GIT_TAG main`. When reporting
+a failure, you may state your OS, CPU architecture and compiler version matrix.
 
 ---
 
@@ -79,7 +93,7 @@ The build system includes several intelligent features:
 
 - **RPATH configuration**: embeds runtime library search paths directly into the test binary so no environment variables are needed at runtime
 - **Automatic Python detection**: locates the active conda environment or system Python to resolve the `libpython` transitive dependency of `libqiskit`
-- **Multi-compiler support**: Tested and validated on macOS arm64 with gfortran 11-15 and LLVM flang 22.1.4
+- **Multi-compiler support**: gfortran and LLVM flang, each validated on macOS arm64 (see [Supported platforms](#supported-platforms)); flang needs the per-layer OBJECT-library split because it does not implement CMake's intra-target Fortran module dependency protocol
 
 ### Build Variants
 

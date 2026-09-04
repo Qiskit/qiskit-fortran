@@ -27,7 +27,7 @@ step fails or when you want to deviate from the script's choices.
 
 | Requirement | Version | Notes |
 |---|---|---|
-| Fortran compiler | gfortran 11+ or flang 22+ | Both tested on macOS arm64 |
+| Fortran compiler | gfortran 11+ or flang 22+ | Both validated on macOS 15 arm64 (gfortran 15.2.0, flang 22.1.4) |
 | CMake | ≥ 3.20 | |
 | Rust toolchain | stable | To build the Qiskit C extension |
 | Qiskit (Python) | 2.4 | Must be installed so the cext build works |
