@@ -28,6 +28,15 @@ qiskit.f90 -> qiskit_circuit.f90 -> qiskit_c_api_circuit.f90 -> libqiskit (C/Rus
 
 ---
 
+## Scripted build
+
+To build the `nuclear_shell` application and everything under it in one command,
+use `./build.sh` (`--help` lists the options and the packages to install); it
+covers Steps 1-3 below plus the application itself. The manual steps follow for
+library-only builds and for debugging a failed script run.
+
+---
+
 ## Step 1 — Build the Qiskit C extension
 
 The shared library is generated from the Rust crate at `qiskit/crates/cext`.

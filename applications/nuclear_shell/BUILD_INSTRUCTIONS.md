@@ -5,6 +5,24 @@ fresh machine with no prior Qiskit or Fortran setup.
 
 ---
 
+## Quick start
+
+`build.sh` in the repository root performs every step in this document  -  it
+resolves the Qiskit C extension, `qiskit-ibm-runtime-c` and both CMake builds,
+skipping anything already present, so re-running it is cheap:
+
+```bash
+./build.sh --help          # options, and the packages to install first
+./build.sh                 # everything, including --runtime support
+./build.sh --no-runtime    # fastest path: test mode and --bitstrings-dir only
+```
+
+Binaries land in `applications/build/nuclear_shell/`, with `USDB.snt` staged
+beside them. The rest of this document is the manual equivalent, useful when a
+step fails or when you want to deviate from the script's choices.
+
+---
+
 ## Prerequisites summary
 
 | Requirement | Version | Notes |

@@ -99,8 +99,21 @@ as circuits × shots increases.
 
 ## Quick start
 
+Build everything with the script in the repository root (see
+[BUILD_INSTRUCTIONS.md](BUILD_INSTRUCTIONS.md) for the manual steps):
+
 ```bash
-cd build/nuclear_shell
+./build.sh --help       # options, and the packages to install
+./build.sh              # or --no-runtime to skip the IBM Runtime client
+```
+
+Then run it  -  binaries live in `applications/build/nuclear_shell/`, with
+`USDB.snt` staged alongside:
+
+```bash
+cd applications/build/nuclear_shell
+
+./nuclear_shell_driver --protons 2 --neutrons 2
 
 # 20Ne  (2 valence protons + 2 valence neutrons, sd-shell, dim=640, E0=-41.184967 MeV USDA oracle)
 # 11 circuits = ceil(86 doubles / 8 per circuit): full doubles-pool coverage at default --subset 16

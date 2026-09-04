@@ -20,6 +20,7 @@ build-swig/
 test_qiskit
 run_test
 *.sh
+!build.sh
 
 # Test artifacts
 test/Testing/
