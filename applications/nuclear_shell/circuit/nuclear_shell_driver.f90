@@ -123,7 +123,8 @@ contains
     subroutine run_circuit_ensemble(n_circuits, n_protons, n_neutrons, &
                                     shots, min_energy, use_runtime, &
                                     mj2_target, j_target_2, subset_target, &
-                                    max_depth, snt_file, save_bitstrings)
+                                    max_depth, snt_file, save_bitstrings, &
+                                    backend_name)
         integer(c_int), intent(in)  :: n_circuits
         integer(c_int), intent(in)  :: n_protons, n_neutrons
         integer(c_int), intent(in)  :: shots
@@ -139,6 +140,8 @@ contains
         character(len=*), intent(in), optional :: snt_file
         ! save_bitstrings: write bitstrings_stepNN.txt even in test mode (for parallel post-processing)
         logical,        intent(in), optional :: save_bitstrings
+        ! backend_name: run on this backend by name; absent or blank = least busy
+        character(len=*), intent(in), optional :: backend_name
 
         integer :: r, j, n_kept, status, ik, n_kept_int
         integer :: total_shots, pool_ptr
@@ -159,7 +162,8 @@ contains
 #ifdef USE_RUNTIME
         type(RtService) :: service
         type(RtBackendList) :: backends
-        type(RtBackend) :: backend
+        type(RtBackend) :: backend, candidate
+        integer :: ib
         type(RtJob) :: job
         type(RtSamplerResult) :: res
 #endif
@@ -373,7 +377,28 @@ contains
             print *, "Connected."
             call service%backends(backends)
             n_backends = backends%length()
-            backend = backends%least_busy()
+            if (present(backend_name)) then
+                if (len_trim(backend_name) > 0) then
+                    do ib = 0, int(n_backends) - 1
+                        candidate = backends%get(ib)
+                        if (trim(candidate%name()) == trim(backend_name)) then
+                            backend = candidate
+                            exit
+                        end if
+                    end do
+                    if (.not. backend%is_valid()) then
+                        write(*,'("ERROR: backend ",A," is not in your account listing.")') &
+                            trim(backend_name)
+                        write(*,'("       Available:")')
+                        do ib = 0, int(n_backends) - 1
+                            candidate = backends%get(ib)
+                            write(*,'("         ",A)') trim(candidate%name())
+                        end do
+                        error stop "run_circuit_ensemble: --backend not found"
+                    end if
+                end if
+            end if
+            if (.not. backend%is_valid()) backend = backends%least_busy()
             if (.not. backend%is_valid()) error stop "No backends available."
             print *, "Backend:", backend%name()
             call backend%get_target(service, backend_target)
@@ -675,7 +700,14 @@ contains
         integer(8)     :: total_filter_ns, total_ham_ns, total_diag_ns, total_classical_ns
         real(8)        :: e_min
         character(len=256) :: bsfile
-        character(len=24)  :: linebuf
+        ! Sized from the model space below, not fixed: a literal len=24 (the
+        ! sd-shell width) truncated every 40-character pf-shell line, so
+        ! linebuf(q:q) read past the declared length for q > 24 and the filter
+        ! kept zero shots.  The shot count was unaffected, so it failed silently.
+        ! Allocated one character wider than n_qubits so an over-long record is
+        ! still over-long after the read and the width check below can see it;
+        ! sized exactly, a long line truncates to n_qubits and passes the check.
+        character(len=:), allocatable :: linebuf
         character(len=256) :: snt_str
 
         mj2_tgt  = 0_c_int
@@ -699,6 +731,7 @@ contains
         end block
         call init_registry_from_snt(ms, n_protons, n_neutrons)
         n_qubits = int(reg_n_qubits(), c_int)
+        allocate(character(len=n_qubits + 1) :: linebuf)
         call setup_single_particle_data(n_qubits, trim(snt_str)//c_null_char)
         call init_cg_tables(int(maxval(ms%orbitals(1:ms%n_orbitals)%j2), c_int))
 
@@ -740,6 +773,20 @@ contains
             do j = 1, int(n_shots_file)
                 read(funit, '(A)', iostat=ios) linebuf
                 if (ios /= 0) exit
+                ! Either direction feeds the filter garbage that reads as "kept 0"
+                ! rather than as an error: a short line pads with blanks, and
+                ! ichar(' ')-48 = -16, while a long line is a different model space.
+                if (len_trim(linebuf) > n_qubits) then
+                    write(*,'("ERROR: ",A,", line ",I0,": more than ",I0," characters")') &
+                        trim(bsfile), j, n_qubits
+                    write(*,'("       Pass the .snt this dump was produced with.")')
+                    error stop "run_bitstrings_dir: bitstring width does not match model space"
+                else if (len_trim(linebuf) /= n_qubits) then
+                    write(*,'("ERROR: ",A,", line ",I0,": ",I0," characters, expected ",I0)') &
+                        trim(bsfile), j, len_trim(linebuf), n_qubits
+                    write(*,'("       Pass the .snt this dump was produced with.")')
+                    error stop "run_bitstrings_dir: bitstring width does not match model space"
+                end if
                 do q = 1, int(n_qubits)
                     bitstrings(q, j) = linebuf(q:q)
                 end do
@@ -860,6 +907,7 @@ program nuclear_shell_driver_exe
     character(len=256) :: bitstrings_dir
     character(len=256) :: snt_arg
     character(len=16)  :: mode_flag   ! "pooled", "per-step", or "" (auto-select)
+    character(len=128) :: backend_arg ! --backend NAME; "" = least busy
     integer :: i, n_args
     logical :: use_runtime, bitstrings_mode, max_depth_set, save_bitstrings
     integer(8) :: t_wall_0, t_wall_1, tick_rate_wall
@@ -879,6 +927,7 @@ program nuclear_shell_driver_exe
     bitstrings_dir  = ""
     snt_arg         = "USDB.snt"
     mode_flag       = ""
+    backend_arg     = ""
     use_runtime       = .false.
     bitstrings_mode   = .false.
     save_bitstrings   = .false.
@@ -976,6 +1025,9 @@ program nuclear_shell_driver_exe
                     stop 1
                 end select
             end if
+        case ('--backend')
+            i = i + 1
+            if (i <= n_args) call get_command_argument(i, backend_arg)
         case ('--mode')
             i = i + 1
             if (i <= n_args) then
@@ -1013,7 +1065,16 @@ program nuclear_shell_driver_exe
             print *, "  --shell NAME           shorthand: 'sd' maps to USDB.snt, 'pf' to gxpf1.snt."
             print *, "                         Use --snt for any other interaction."
             print *, "  --save-bitstrings      write bitstrings_stepNN.txt in test mode (for nuclear_shell_parallel)"
+            print *, "  --backend NAME         run on this backend instead of the least busy one"
+            print *, "                         (--runtime only; NAME must appear in your account listing)"
             stop 0
+        case default
+            ! Previously an unrecognised flag fell through this select silently, so a
+            ! typo or a flag meant for nuclear_shell_parallel (--steps) was discarded
+            ! together with its value and the run continued with defaults.
+            write(*,'("ERROR: unknown option: ",A)') trim(arg)
+            write(*,'("       Run with --help for the supported flags.")')
+            stop 1
         end select
         i = i + 1
     end do
@@ -1060,14 +1121,16 @@ program nuclear_shell_driver_exe
                                   subset_target=int(n_subset, c_int), &
                                   max_depth=int(max_depth, c_int), &
                                   snt_file=trim(snt_arg), &
-                                  save_bitstrings=save_bitstrings)
+                                  save_bitstrings=save_bitstrings, &
+                                  backend_name=trim(backend_arg))
     else
         call run_circuit_ensemble(int(n_circuits, c_int), N_PROTONS, N_NEUTRONS, &
                                   int(shots, c_int), min_energy, use_runtime, &
                                   mj2_target=MJ2_TARGET, j_target_2=J_TARGET_2, &
                                   subset_target=int(n_subset, c_int), &
                                   snt_file=trim(snt_arg), &
-                                  save_bitstrings=save_bitstrings)
+                                  save_bitstrings=save_bitstrings, &
+                                  backend_name=trim(backend_arg))
     end if
     call system_clock(t_wall_1)
 

@@ -30,7 +30,7 @@ step fails or when you want to deviate from the script's choices.
 | Fortran compiler | gfortran 11+ or flang 22+ | Both validated on macOS 15 arm64 (gfortran 15.2.0, flang 22.1.4) |
 | CMake | ≥ 3.20 | |
 | Rust toolchain | stable | To build the Qiskit C extension |
-| Qiskit (Python) | 2.4 | Must be installed so the cext build works |
+| Qiskit (Python) | not required | `make c` is pure cargo; `pyo3` is an optional `qiskit-cext` feature the C build does not enable |
 | LAPACK | any | macOS: Accelerate (automatic); Linux: `liblapack-dev` |
 
 **Optional:**
@@ -71,11 +71,11 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 # restart your shell or run: source "$HOME/.cargo/env"
 ```
 
-### 3. Install Qiskit (Python)
+### 3. Python Qiskit (not required)
 
-```bash
-pip install qiskit
-```
+`make c` in the next step builds the C extension with cargo alone, and `pyo3` is an optional
+feature of the `qiskit-cext` crate that the C build does not enable. No Python Qiskit install
+is needed; skip to step 4.
 
 ### 4. Build the Qiskit C extension
 
@@ -244,11 +244,11 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 source "$HOME/.cargo/env"
 ```
 
-### 3. Install Qiskit (Python)
+### 3. Python Qiskit (not required)
 
-```bash
-pip install qiskit
-```
+`make c` in the next step builds the C extension with cargo alone, and `pyo3` is an optional
+feature of the `qiskit-cext` crate that the C build does not enable. No Python Qiskit install
+is needed; skip to step 4.
 
 ### 4–6. Build Qiskit C extension, qiskit-fortran, qiskit-ibm-runtime-c
 

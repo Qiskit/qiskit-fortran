@@ -80,7 +80,7 @@ program nuclear_shell_parallel
     integer(c_int) :: n_qubits, n_kept_ci, n_shots_file
     integer        :: ik, n_kept, dim, info, snt_st, funit, ios, q, j
     character(len=256) :: bsfile, arg
-    character(len=24)  :: linebuf
+    character(len=:), allocatable :: linebuf
     integer(c_int)     :: mj2_tgt
     ! missing-file diagnostics collected locally; totals gathered via coarray
     integer :: n_missing
@@ -189,6 +189,7 @@ program nuclear_shell_parallel
 
     call init_registry_from_snt(ms, int(n_protons_arg, c_int), int(n_neutrons_arg, c_int))
     n_qubits = int(reg_n_qubits(), c_int)
+    allocate(character(len=n_qubits + 1) :: linebuf)
     call setup_single_particle_data(n_qubits, trim(snt_file)//c_null_char)
     ! Derive j_max from the loaded model space so pf-shell (j_max=7/2) works
     ! automatically without manual edits to the source literal.
@@ -238,6 +239,15 @@ program nuclear_shell_parallel
         do j = 1, int(n_shots_file)
             read(funit, '(A)', iostat=ios) linebuf
             if (ios /= 0) exit
+            if (len_trim(linebuf) > n_qubits) then
+                write(*,'("ERROR [image ",I0,"]: ",A,", line ",I0,": more than ",I0," characters")') &
+                    me, trim(bsfile), j, n_qubits
+                error stop "nuclear_shell_parallel: bitstring width does not match model space"
+            else if (len_trim(linebuf) /= n_qubits) then
+                write(*,'("ERROR [image ",I0,"]: ",A,", line ",I0,": ",I0," characters, expected ",I0)') &
+                    me, trim(bsfile), j, len_trim(linebuf), n_qubits
+                error stop "nuclear_shell_parallel: bitstring width does not match model space"
+            end if
             do q = 1, int(n_qubits)
                 bitstrings(q, j) = linebuf(q:q)
             end do

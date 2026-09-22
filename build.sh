@@ -9,6 +9,7 @@ REPO="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 WORK_DIR="${WORK_DIR:-$HOME/qf-work}"   # where dependencies are cloned
 QISKIT_TAG="${QISKIT_TAG:-2.4.2}"       # oldest series with qk_obs_add_inplace,
 BUILD_TYPE="${BUILD_TYPE:-Release}"     #   newest qiskit-ibm-runtime-c supports
+RUNTIME_COMMIT="${RUNTIME_COMMIT:-}"   # pin qiskit-ibm-runtime-c; empty = tip of main
 QISKIT_ROOT="" RUNTIME_ROOT="" FC="" JOBS="" RUNTIME=1 TESTS=1 CLEAN=0
 
 usage() {
@@ -19,13 +20,17 @@ Usage: ./build.sh [options]
                       mode and via --bitstrings-dir, only --runtime is lost
   --qiskit-root DIR   use an existing Qiskit checkout instead of cloning
   --runtime-root DIR  use an existing qiskit-ibm-runtime-c checkout
+  --runtime-commit SHA
+                      pin qiskit-ibm-runtime-c to SHA instead of the tip of
+                      main, so a run can be reproduced exactly
   --compiler NAME     Fortran compiler (default: gfortran, else flang)
   --jobs N            parallel jobs (default: all cores)
   --skip-tests        do not run the qiskit-fortran test suite
   --clean             delete build/ and applications/build/ first
   -h, --help
 
-Env: WORK_DIR (default ~/qf-work), QISKIT_TAG ($QISKIT_TAG), BUILD_TYPE ($BUILD_TYPE)
+Env: WORK_DIR (default ~/qf-work), QISKIT_TAG ($QISKIT_TAG), BUILD_TYPE ($BUILD_TYPE),
+     RUNTIME_COMMIT (default: tip of main)
 
 Needs git, cmake >= 3.20, make, cargo and a Fortran compiler:
   macOS   brew install gcc cmake gsl libomp rust
@@ -40,6 +45,7 @@ while [[ $# -gt 0 ]]; do
         --no-runtime)   RUNTIME=0;         shift ;;
         --qiskit-root)  QISKIT_ROOT="$2";  shift 2 ;;
         --runtime-root) RUNTIME_ROOT="$2"; shift 2 ;;
+        --runtime-commit) RUNTIME_COMMIT="$2"; shift 2 ;;
         --compiler)     FC="$2";           shift 2 ;;
         --jobs|-j)      JOBS="$2";         shift 2 ;;
         --skip-tests)   TESTS=0;           shift ;;
@@ -93,12 +99,44 @@ fi
 
 if ((RUNTIME)); then
     if [[ -n "$RUNTIME_ROOT" ]]; then
+        [[ -z "$RUNTIME_COMMIT" ]] ||
+            die "--runtime-commit cannot be combined with --runtime-root: checking out a
+       commit in a checkout you supplied would rewrite your working tree.  Check it
+       out yourself, or drop --runtime-root and let build.sh clone into WORK_DIR."
         [[ -d "$RUNTIME_ROOT" ]] || die "--runtime-root '$RUNTIME_ROOT' does not exist"
         RUNTIME_ROOT="$(cd -- "$RUNTIME_ROOT" && pwd)"
     else
         RUNTIME_ROOT="$WORK_DIR/qiskit-ibm-runtime-c"
-        [[ -d "$RUNTIME_ROOT/.git" ]] ||
-            run git clone --depth 1 https://github.com/Qiskit/qiskit-ibm-runtime-c.git "$RUNTIME_ROOT"
+        RUNTIME_URL=https://github.com/Qiskit/qiskit-ibm-runtime-c.git
+        if [[ ! -d "$RUNTIME_ROOT/.git" ]]; then
+            if [[ -n "$RUNTIME_COMMIT" ]]; then
+                run git clone "$RUNTIME_URL" "$RUNTIME_ROOT"
+            else
+                run git clone --depth 1 "$RUNTIME_URL" "$RUNTIME_ROOT"
+            fi
+        fi
+        if [[ -n "$RUNTIME_COMMIT" ]]; then
+            # An earlier unpinned run left a --depth 1 clone holding a single commit, and
+            # a plain fetch stays shallow, so the checkout below could not reach the SHA.
+            if [[ "$(git -C "$RUNTIME_ROOT" rev-parse --is-shallow-repository)" == true ]]; then
+                run git -C "$RUNTIME_ROOT" fetch --quiet --unshallow --tags origin
+            else
+                run git -C "$RUNTIME_ROOT" fetch --quiet --tags origin
+            fi
+            git -C "$RUNTIME_ROOT" cat-file -e "${RUNTIME_COMMIT}^{commit}" 2>/dev/null ||
+                die "commit '$RUNTIME_COMMIT' is not in qiskit-ibm-runtime-c after fetching"
+            run git -C "$RUNTIME_ROOT" checkout --detach "$RUNTIME_COMMIT"
+        fi
+    fi
+    # Record what was used; a write-up should quote this next to the Qiskit version.
+    RUNTIME_HEAD="$(git -C "$RUNTIME_ROOT" rev-parse HEAD 2>/dev/null || echo unknown)"
+    say "qiskit-ibm-runtime-c: $(printf '%.9s' "$RUNTIME_HEAD")"
+    # Whatever is already in build/ was compiled from whichever commit was checked out
+    RUNTIME_STAMP="$RUNTIME_ROOT/build/.qf-built-commit"
+    if [[ -n "$RUNTIME_COMMIT" && -d "$RUNTIME_ROOT/build" ]] &&
+       { [[ ! -f "$RUNTIME_STAMP" ]] || [[ "$(cat "$RUNTIME_STAMP")" != "$RUNTIME_HEAD" ]]; }; then
+        say "build/ does not match $(printf '%.9s' "$RUNTIME_HEAD"); rebuilding it and its Qiskit"
+        run rm -rf "$RUNTIME_ROOT/build"
     fi
     # release and debug are the two locations the root CMakeLists searches
     if compgen -G "$RUNTIME_ROOT/build/cargo/release/libqiskit_ibm_runtime.*" >/dev/null ||
@@ -107,6 +145,7 @@ if ((RUNTIME)); then
     else
         run cmake -S "$RUNTIME_ROOT" -B "$RUNTIME_ROOT/build" -DCMAKE_BUILD_TYPE=Release
         run cmake --build "$RUNTIME_ROOT/build" --parallel "$JOBS"
+        printf '%s\n' "$RUNTIME_HEAD" > "$RUNTIME_STAMP"
     fi
     # It builds its own Qiskit (GIT_TAG main); reuse that rather than build twice.
     if [[ -z "$QISKIT_ROOT" ]]; then QISKIT_ROOT="$RUNTIME_ROOT/build/qiskit_srcdir"; fi
@@ -176,7 +215,7 @@ cat <<EOF
     ./nuclear_shell_driver --protons 2 --neutrons 2      # test mode, no credentials
 EOF
 if [[ -x "$ABUILD/nuclear_shell/nuclear_shell_parallel" ]]; then
-    say "./nuclear_shell_driver --steps 3 --protons 2 --neutrons 2 --save-bitstrings"
+    say "./nuclear_shell_driver --circuits 3 --protons 2 --neutrons 2 --save-bitstrings"
     say "./nuclear_shell_parallel --steps 3 --protons 2 --neutrons 2   # needs those files"
 fi
 if ((RUNTIME)); then say "./nuclear_shell_driver --runtime ...  (credentials: ~/.qiskit/qiskit-ibm.json)"; fi
