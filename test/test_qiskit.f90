@@ -832,7 +832,7 @@ contains
     call qc%cx(0, 1)
     call qc%measure_all()
 
-    transpiled_qc = transpile(qc, backend=backend)
+    call transpile(qc, transpiled_qc, backend=backend)
 
     nq    = transpiled_qc%num_qubits()
     nc    = transpiled_qc%num_clbits()
@@ -858,7 +858,7 @@ contains
       call qc%cx(0, 1)
       call qc%measure_all()
       call opts%init(optimization_level=level)
-      tqc = transpile(qc, backend=backend, options=opts)
+      call transpile(qc, tqc, backend=backend, options=opts)
       ninstr = tqc%num_instructions()
       call assert_true(ninstr > 0, "optimization_level=" // char(48 + level) // ": has instructions")
     end do
@@ -880,11 +880,11 @@ contains
     call qc%measure_all()
 
     call opts%init(optimization_level=0)
-    tqc_l0 = transpile(qc, backend=backend, options=opts)
+    call transpile(qc, tqc_l0, backend=backend, options=opts)
     ninstr_l0 = tqc_l0%num_instructions()
 
     call opts%init(optimization_level=1)
-    tqc_l1 = transpile(qc, backend=backend, options=opts)
+    call transpile(qc, tqc_l1, backend=backend, options=opts)
     ninstr_l1 = tqc_l1%num_instructions()
 
     call assert_true(ninstr_l0 > ninstr_l1, &
