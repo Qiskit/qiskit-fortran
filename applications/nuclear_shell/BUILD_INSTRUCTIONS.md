@@ -485,6 +485,17 @@ whatever version Homebrew installed). Pass the path explicitly:
 cmake -B build -DCMAKE_Fortran_COMPILER=$(which gfortran-15) ...
 ```
 
+### `ld: library 'System' not found` (macOS, flang)
+
+Homebrew's flang points each macOS version at that version's SDK
+(`$(brew --prefix flang)/etc/clang/*.cfg`), so it fails to link when the Command Line
+Tools are older than macOS itself. The real fix is to update the Command Line Tools
+(`softwareupdate --list`). Until then, `build.sh` detects this and passes the SDK that
+is installed; for a manual build, pass it yourself:
+```bash
+cmake -B build ... -DCMAKE_Fortran_FLAGS="-isysroot \"$(xcrun --show-sdk-path)\""
+```
+
 ### Library not found at runtime (macOS)
 
 CMake sets `BUILD_RPATH` automatically. If you still see `dylib not loaded`:
@@ -492,7 +503,7 @@ CMake sets `BUILD_RPATH` automatically. If you still see `dylib not loaded`:
 export DYLD_LIBRARY_PATH="/path/to/qiskit/dist/c/lib:$DYLD_LIBRARY_PATH"
 ```
 
-### `zheev_` not found at link time
+### `dsyevr_` or `zheev_` not found at link time
 
 LAPACK is not being found. On macOS, CMake links Accelerate automatically  -  if
 this fails, verify the SDK is present (`xcrun --show-sdk-path`). On Linux install
