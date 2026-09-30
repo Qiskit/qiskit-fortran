@@ -154,6 +154,7 @@ add_library(nuclear_shell_lib
     circuit/nuclear_ansatz.f90
     nuclear_pool.f90
     nuclear_selection.f90
+    nuclear_recovery.f90
     nuclear_gates.f90
     circuit/nuclear_shell_driver.f90
 )

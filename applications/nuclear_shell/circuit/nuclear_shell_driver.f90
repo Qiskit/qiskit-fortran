@@ -32,6 +32,7 @@ module nuclear_shell_driver
 #endif
     use nuclear_ansatz
     use nuclear_selection, only: select_singles_slice, select_doubles_slice
+    use nuclear_recovery,  only: recovery_loop
     use symmetry_filter, only: filter_bitstrings, setup_single_particle_data, &
                                  convert_bitstrings_to_int, filter_bitstrings_int
     use exact_solver, only: rank_pairs_by_pt2, rank_doubles_by_pt2, &
@@ -124,7 +125,7 @@ contains
                                     shots, min_energy, use_runtime, &
                                     mj2_target, j_target_2, subset_target, &
                                     max_depth, snt_file, save_bitstrings, &
-                                    backend_name)
+                                    backend_name, recovery_iterations)
         integer(c_int), intent(in)  :: n_circuits
         integer(c_int), intent(in)  :: n_protons, n_neutrons
         integer(c_int), intent(in)  :: shots
@@ -142,6 +143,8 @@ contains
         logical,        intent(in), optional :: save_bitstrings
         ! backend_name: run on this backend by name; absent or blank = least busy
         character(len=*), intent(in), optional :: backend_name
+        ! recovery_iterations: self-consistent configuration recovery rounds (0 = post-selection only)
+        integer,          intent(in), optional :: recovery_iterations
 
         integer :: r, j, n_kept, status, ik, n_kept_int
         integer :: total_shots, pool_ptr
@@ -149,8 +152,8 @@ contains
         integer :: depth_cap, singles_gate_depth
         integer :: layer_size, d_layer_size
         integer(8) :: tick_rate, tc0, tc1
-        integer(8) :: t_filter_ns, t_ham_ns, t_diag_ns
-        logical :: do_runtime, do_save_bitstrings
+        integer(8) :: t_filter_ns, t_ham_ns, t_diag_ns, t_recovery_ns
+        logical :: do_runtime, do_save_bitstrings, do_recovery
         integer(c_int64_t) :: n_backends
         integer :: dim, info, filtered_size_i, n_sp_total
         integer :: raw_d_size, filtered_d_size
@@ -561,13 +564,28 @@ contains
                                    n_protons, n_neutrons, mj2_tgt, 0_c_int, kept, n_kept)
         call system_clock(tc1)
         t_filter_ns = (tc1 - tc0) * (1000000000_8 / tick_rate)
-        deallocate(occ_int)
         print '("  Filter: kept ",I5," / ",I6," pooled shots")', n_kept, pool_ptr
 
         t_ham_ns  = 0_8
         t_diag_ns = 0_8
+        t_recovery_ns = 0_8
+        do_recovery = .false.
+        if (present(recovery_iterations)) do_recovery = recovery_iterations > 0
 
-        if (n_kept > 0) then
+        if (do_recovery) then
+            ! --- 6-8. Repair shots instead of discarding them, then diagonalize
+            call system_clock(tc0)
+            call recovery_loop(model_space, occ_int, n_protons, n_neutrons, mj2_tgt, &
+                               recovery_iterations, eigenvalues, dim, n_kept_int, info)
+            call system_clock(tc1)
+            t_recovery_ns = (tc1 - tc0) * (1000000000_8 / tick_rate)
+            if (info == 0) then
+                min_energy = eigenvalues(1)
+                call print_energies(eigenvalues, dim, n_kept_int)
+            else
+                print *, "  Configuration recovery found no determinant in the target sector"
+            end if
+        else if (n_kept > 0) then
             n_kept_int = int(n_kept)
             allocate(kept_idx(n_kept_int))
             ik = 0
@@ -589,7 +607,7 @@ contains
             deallocate(pool_bs)
 
             if (info == 0) then
-                ! --- 8. Diagonalize (LAPACK zheev) -> eigenvalues -------------------
+                ! --- 8. Diagonalize (LAPACK dsyevr) -> lowest eigenvalues ------------
                 call system_clock(tc0)
                 call diagonalize_exact_complex(hamiltonian, dim, eigenvalues, eigenvectors, info)
                 call system_clock(tc1)
@@ -598,17 +616,7 @@ contains
                 ! --- 9. Emit RESULT lines -----------------------------------------
                 if (info == 0) then
                     min_energy = eigenvalues(1)
-                    print '("  Subspace dim  : ",I5)', dim
-                    block
-                        integer :: ei, n_show
-                        n_show = min(4, dim)
-                        do ei = 1, n_show
-                            write(*,'("  E",I1,"            : ",F18.9," MeV")') ei, eigenvalues(ei)
-                            write(*,'("RESULT  energy_level",I2.2,"   ",F16.9," MeV")') ei, eigenvalues(ei)
-                        end do
-                    end block
-                    write(*,'("RESULT  subspace_dim   ",I16," states")') dim
-                    write(*,'("RESULT  pooled_kept    ",I16," shots")') n_kept
+                    call print_energies(eigenvalues, dim, n_kept_int)
                 else
                     print *, "  Diagonalization failed"
                 end if
@@ -625,14 +633,17 @@ contains
             print *, "  No valid bitstrings after filter  -  increase shots or circuits"
         end if
 
-        deallocate(kept)
+        deallocate(kept, occ_int)
 
         write(*,'("RESULT  filter_total   ",I16," ns")') t_filter_ns
         write(*,'("RESULT  ham_total      ",I16," ns")') t_ham_ns
         write(*,'("RESULT  diag_total     ",I16," ns")') t_diag_ns
-        write(*,'("RESULT  classical_total",I16," ns")') t_filter_ns + t_ham_ns + t_diag_ns
-        print '("  Classical: ",F10.3," ms (filter+ham+diag)")', &
-            real(t_filter_ns + t_ham_ns + t_diag_ns, 8) / 1.0d6
+        if (do_recovery) write(*,'("RESULT  recovery_total ",I16," ns")') t_recovery_ns
+        write(*,'("RESULT  classical_total",I16," ns")') &
+            t_filter_ns + t_ham_ns + t_diag_ns + t_recovery_ns
+        print '("  Classical: ",F10.3," ms (filter+ham+diag",A,")")', &
+            real(t_filter_ns + t_ham_ns + t_diag_ns + t_recovery_ns, 8) / 1.0d6, &
+            trim(merge("+recovery", "         ", do_recovery))
 
         deallocate(ranked_pairs, tbme_weights, angles, filtered_pairs, raw_pairs)
         if (allocated(ranked_quads))    deallocate(ranked_quads)
@@ -643,6 +654,20 @@ contains
         call cleanup_cg_tables()
 
     end subroutine run_circuit_ensemble
+
+    subroutine print_energies(eigenvalues, dim, n_kept)
+        real(8), intent(in) :: eigenvalues(:)
+        integer, intent(in) :: dim, n_kept
+        integer :: ei
+
+        print '("  Subspace dim  : ",I5)', dim
+        do ei = 1, min(4, dim)
+            write(*,'("  E",I1,"            : ",F18.9," MeV")') ei, eigenvalues(ei)
+            write(*,'("RESULT  energy_level",I2.2,"   ",F16.9," MeV")') ei, eigenvalues(ei)
+        end do
+        write(*,'("RESULT  subspace_dim   ",I16," states")') dim
+        write(*,'("RESULT  pooled_kept    ",I16," shots")') n_kept
+    end subroutine print_energies
 
     subroutine generate_test_bitstrings(n_qubits, n_samples, n_protons, n_neutrons, bitstrings)
         integer(c_int), intent(in) :: n_qubits, n_samples, n_protons, n_neutrons
@@ -674,7 +699,7 @@ contains
     !> runs symmetry filter → subspace Hamiltonian → diagonalisation for each,
     !> and emits RESULT lines.
     subroutine run_bitstrings_dir(bits_dir, n_protons, n_neutrons, max_steps, &
-                                   mj2_target, j_target_2, snt_file)
+                                   mj2_target, j_target_2, snt_file, recovery_iterations)
         character(len=*), intent(in) :: bits_dir
         integer(c_int),   intent(in) :: n_protons, n_neutrons
         integer,          intent(in) :: max_steps   ! maximum steps to look for
@@ -682,6 +707,8 @@ contains
         integer(c_int), intent(in), optional :: j_target_2  ! 2*J for CG pool filter (0=J=0 ground state)
         ! snt_file: path to the .snt interaction file (default: "USDB.snt").
         character(len=*), intent(in), optional :: snt_file
+        ! recovery_iterations: self-consistent configuration recovery rounds (0 = post-selection only)
+        integer,          intent(in), optional :: recovery_iterations
 
         type(model_space_data) :: ms
         character(kind=c_char), allocatable :: bitstrings(:,:)
@@ -696,8 +723,10 @@ contains
         integer        :: i, j, ik, n_kept, dim, info, n_valid_steps
         integer        :: funit, ios, q
         integer(8)     :: tc0, tc1, tick
-        integer(8)     :: t_filter_ns, t_ham_ns, t_diag_ns, t_classical_ns
+        integer(8)     :: t_filter_ns, t_ham_ns, t_diag_ns, t_classical_ns, t_recovery_ns
         integer(8)     :: total_filter_ns, total_ham_ns, total_diag_ns, total_classical_ns
+        integer(8)     :: total_recovery_ns
+        logical        :: do_recovery
         real(8)        :: e_min
         character(len=256) :: bsfile
         ! Sized from the model space below, not fixed: a literal len=24 (the
@@ -714,6 +743,8 @@ contains
         snt_str  = "USDB.snt"
         if (present(mj2_target)) mj2_tgt = mj2_target
         if (present(snt_file))   snt_str  = trim(adjustl(snt_file))
+        do_recovery = .false.
+        if (present(recovery_iterations)) do_recovery = recovery_iterations > 0
 
         print *, "=========================================="
         print *, "Fortran classical pipeline (--bitstrings-dir)"
@@ -734,6 +765,9 @@ contains
         allocate(character(len=n_qubits + 1) :: linebuf)
         call setup_single_particle_data(n_qubits, trim(snt_str)//c_null_char)
         call init_cg_tables(int(maxval(ms%orbitals(1:ms%n_orbitals)%j2), c_int))
+        ! setup_single_particle_data re-inits the registry at (0,0); restore the HF
+        ! occupation that --recovery seeds from, as run_circuit_ensemble does.
+        call init_registry_from_snt(ms, n_protons, n_neutrons)
 
         block
             integer :: n_omp_threads
@@ -743,6 +777,7 @@ contains
 
         call system_clock(count_rate=tick)
         total_filter_ns = 0_8; total_ham_ns = 0_8; total_diag_ns = 0_8; total_classical_ns = 0_8
+        total_recovery_ns = 0_8
         n_valid_steps = 0
         e_min = huge(1.0d0)
 
@@ -807,13 +842,29 @@ contains
             call system_clock(tc1)
             t_filter_ns = (tc1 - tc0) * (1000000000_8 / tick)
             n_kept = int(n_kept_ci)
-            deallocate(occ_int)
             print '("    kept=",I4,"/",I4)', n_kept, n_shots_file
 
             t_ham_ns  = 0_8
             t_diag_ns = 0_8
+            t_recovery_ns = 0_8
 
-            if (n_kept > 0) then
+            if (do_recovery) then
+                ! Repair this step's shots instead of discarding them, then diagonalize
+                call system_clock(tc0)
+                call recovery_loop(ms, occ_int, n_protons, n_neutrons, mj2_tgt, &
+                                   recovery_iterations, eigenvalues, dim, n_kept, info)
+                call system_clock(tc1)
+                t_recovery_ns = (tc1 - tc0) * (1000000000_8 / tick)
+                if (info == 0) then
+                    n_valid_steps = n_valid_steps + 1
+                    e_min = min(e_min, eigenvalues(1))
+                    print '("    E=",F18.9," MeV  dim=",I5)', eigenvalues(1), dim
+                    write(*,'("RESULT  energy_step",I2.2,"   ",F16.9," MeV")') i, eigenvalues(1)
+                    write(*,'("RESULT  kept_step",I2.2,"     ",I16," shots")') i, n_kept
+                    write(*,'("RESULT  dim_step",I2.2,"      ",I16," states")') i, dim
+                end if
+                if (allocated(eigenvalues)) deallocate(eigenvalues)
+            else if (n_kept > 0) then
                 allocate(kept_idx(n_kept))
                 ik = 0
                 do j = 1, int(n_shots_file)
@@ -856,13 +907,14 @@ contains
                 if (allocated(basis_map))    deallocate(basis_map)
             end if
 
-            t_classical_ns = t_filter_ns + t_ham_ns + t_diag_ns
+            t_classical_ns = t_filter_ns + t_ham_ns + t_diag_ns + t_recovery_ns
             total_filter_ns    = total_filter_ns    + t_filter_ns
             total_ham_ns       = total_ham_ns       + t_ham_ns
             total_diag_ns      = total_diag_ns      + t_diag_ns
+            total_recovery_ns  = total_recovery_ns  + t_recovery_ns
             total_classical_ns = total_classical_ns + t_classical_ns
 
-            deallocate(bitstrings, kept)
+            deallocate(bitstrings, kept, occ_int)
         end do
 
         ! Aggregate result output
@@ -873,6 +925,7 @@ contains
             write(*,'("RESULT  ham_total      ",I16," ns")') total_ham_ns
             write(*,'("RESULT  diag_mean      ",I16," ns")') total_diag_ns / int(n_valid_steps,8)
             write(*,'("RESULT  diag_total     ",I16," ns")') total_diag_ns
+            if (do_recovery) write(*,'("RESULT  recovery_total ",I16," ns")') total_recovery_ns
             write(*,'("RESULT  classical_total",I16," ns")') total_classical_ns
             write(*,'("RESULT  energy_min     ",F16.9," MeV")') e_min
         end if
@@ -893,7 +946,7 @@ end module nuclear_shell_driver
 !   5. Submit to IBM Runtime or generate test shots     }
 !   6. Pool and filter bitstrings (symmetry post-selection)
 !   7. Build restricted subspace Hamiltonian
-!   8. Diagonalize (LAPACK zheev) -> ground-state energy
+!   8. Diagonalize (LAPACK dsyevr) -> ground-state energy
 !   9. Emit RESULT lines
 ! ============================================================================
 program nuclear_shell_driver_exe
@@ -901,7 +954,7 @@ program nuclear_shell_driver_exe
     use nuclear_shell_driver
     implicit none
 
-    integer :: n_circuits, shots, n_subset, max_steps, max_depth
+    integer :: n_circuits, shots, n_subset, max_steps, max_depth, n_recovery
     real(c_double) :: min_energy
     character(len=256) :: arg
     character(len=256) :: bitstrings_dir
@@ -924,6 +977,7 @@ program nuclear_shell_driver_exe
     max_steps       = 32
     max_depth       = 0
     max_depth_set   = .false.
+    n_recovery      = 0
     bitstrings_dir  = ""
     snt_arg         = "USDB.snt"
     mode_flag       = ""
@@ -991,6 +1045,12 @@ program nuclear_shell_driver_exe
                 read(arg, *) max_depth
                 max_depth_set = .true.
             end if
+        case ('--recovery')
+            i = i + 1
+            if (i <= n_args) then
+                call get_command_argument(i, arg)
+                read(arg, *) n_recovery
+            end if
         case ('--mj-target')
             i = i + 1
             if (i <= n_args) then
@@ -1057,6 +1117,8 @@ program nuclear_shell_driver_exe
             print *, "                           per-step  -  diagonalize each step file independently,"
             print *, "                                      report min energy (default for --bitstrings-dir;"
             print *, "                                      same strategy as nuclear_shell_parallel)"
+            print *, "  --recovery N           configuration recovery: repair shots with wrong N/Z against"
+            print *, "                         the ground-state occupancies, up to N rounds (default 0 = off)"
             print *, "  --mj-target N          2*Mj sector: 0=even-even (default), +/-1=odd-mass"
             print *, "  --j-target N           2*J for CG filter: 0=J=0 (default)"
             print *, "  --snt FILE             path to any KSHELL-format .snt interaction file"
@@ -1108,7 +1170,7 @@ program nuclear_shell_driver_exe
     if (bitstrings_mode) then
         call run_bitstrings_dir(trim(bitstrings_dir), N_PROTONS, N_NEUTRONS, max_steps, &
                                 mj2_target=MJ2_TARGET, j_target_2=J_TARGET_2, &
-                                snt_file=trim(snt_arg))
+                                snt_file=trim(snt_arg), recovery_iterations=n_recovery)
         stop 0
     end if
 
@@ -1122,7 +1184,8 @@ program nuclear_shell_driver_exe
                                   max_depth=int(max_depth, c_int), &
                                   snt_file=trim(snt_arg), &
                                   save_bitstrings=save_bitstrings, &
-                                  backend_name=trim(backend_arg))
+                                  backend_name=trim(backend_arg), &
+                                  recovery_iterations=n_recovery)
     else
         call run_circuit_ensemble(int(n_circuits, c_int), N_PROTONS, N_NEUTRONS, &
                                   int(shots, c_int), min_energy, use_runtime, &
@@ -1130,7 +1193,8 @@ program nuclear_shell_driver_exe
                                   subset_target=int(n_subset, c_int), &
                                   snt_file=trim(snt_arg), &
                                   save_bitstrings=save_bitstrings, &
-                                  backend_name=trim(backend_arg))
+                                  backend_name=trim(backend_arg), &
+                                  recovery_iterations=n_recovery)
     end if
     call system_clock(t_wall_1)
 
