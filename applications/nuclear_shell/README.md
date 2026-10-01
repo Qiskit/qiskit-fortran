@@ -205,8 +205,8 @@ when E1 moves by less than 0.1 keV.
 ./nuclear_shell_driver --bitstrings-dir /path/to/steps --protons 2 --neutrons 2 --recovery 4
 ```
 
-`nuclear_shell_parallel` does not implement `--recovery` and silently ignores it, so
-with the flag a single image no longer matches `--bitstrings-dir`.
+`nuclear_shell_parallel` accepts the same flag. Seeds do not depend on the image, so any
+image count gives the same per-step results as `--bitstrings-dir --recovery`.
 
 ---
 
