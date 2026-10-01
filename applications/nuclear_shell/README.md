@@ -179,6 +179,35 @@ cafrun -n 4 ./nuclear_shell_parallel \
     --bitstrings-dir /path/to/steps
 ```
 
+### Configuration recovery
+
+Post-selection discards every shot with a wrong proton or neutron number, which on
+noisy hardware can be most of them. `--recovery N` repairs those shots instead, a
+native port of the self-consistent configuration recovery in `qiskit-addon-sqd`
+(Robledo-Moreno et al. 2025):
+
+1. Estimate each qubit's occupancy: first from the shots already on the right nucleon
+   numbers (or the HF reference if there are none), then from the latest ground state.
+2. In every shot whose proton or neutron half has the wrong count, flip exactly the
+   excess bits, preferring the ones that disagree most with that estimate.
+3. Symmetry-filter the repaired shots (N, Z, Mj, parity), add the survivors to the
+   subspace (which starts from the HF reference), and diagonalize. If no repaired shot
+   survives, the run or step reports no energy, as post-selection would.
+
+The subspace only grows, so each round's energy is at or below the last and never below
+the exact ground state. The loop stops after N rounds, when a round adds nothing, or
+when E1 moves by less than 0.1 keV.
+
+```bash
+./nuclear_shell_driver --runtime --protons 2 --neutrons 2 --circuits 11 --shots 4096 --recovery 4
+
+# the same on saved shots, per step (each step file is repaired on its own)
+./nuclear_shell_driver --bitstrings-dir /path/to/steps --protons 2 --neutrons 2 --recovery 4
+```
+
+`nuclear_shell_parallel` accepts the same flag. Seeds do not depend on the image, so any
+image count gives the same per-step results as `--bitstrings-dir --recovery`.
+
 ---
 
 ## Classical post-processing on saved bitstrings
@@ -205,6 +234,7 @@ To re-run only classical post-processing on those files (no QPU connection):
 | `-s, --shots NUM` | 1024 | shots per circuit |
 | `-r, --runtime` | off | submit circuits via IBM Runtime |
 | `--bitstrings-dir DIR` | -- | load pre-dumped bitstrings, skip QPU |
+| `--recovery N` | 0 | self-consistent configuration recovery, up to N rounds (0 = post-selection only). See [Configuration recovery](#configuration-recovery) |
 | `--mj-target N` | 0 | 2×Mj sector for symmetry filter (0 = Mj=0 ground state; ±1, ±2, ... for excited sectors). Fully supported in both `nuclear_shell_driver` and `nuclear_shell_parallel`. |
 | `--snt FILE` | `USDB.snt` | path to any KSHELL-format `.snt` interaction file. j_max and orbital count are read directly from the file - no code changes needed to add a new interaction. |
 | `--shell NAME` | `sd` | shorthand: `sd` maps to `USDB.snt` (sd-shell, 24 qubits), `pf` maps to `gxpf1.snt` (pf-shell, 40 qubits). Use `--snt` for any other interaction. |
@@ -260,7 +290,7 @@ POST-PROCESS (once on the full pool):
   7. filter_bitstrings: keep shots satisfying (N_p, N_n, Mj=0 (magnetic quantum number
        projection), even parity)
   8. build_subspace_hamiltonian: H restricted to unique surviving determinants
-  9. diagonalize_exact_complex: LAPACK zheev -> ground-state energy
+  9. diagonalize_exact_complex: LAPACK dsyevr -> ground-state energy
 ```
 
 **Ensemble coverage:** the first circuit always uses the strongest operators (ranked by
@@ -538,6 +568,12 @@ here without callers needing any change.
 - `select_doubles_slice(ranked_pool, n_pool, circuit_index, subset_size, layer_ops, layer_size [, max_depth] [, depth_already_used])`, same for 2p2h pools; `depth_already_used` subtracts gates already placed by the singles layer from the depth budget.
 - Note: a single generic `select_ranked_slice` is not provided because Fortran generic resolution requires TKR distinctness; both procedures share identical argument types.
 
+### `nuclear_recovery.f90`
+Self-consistent configuration recovery (`--recovery`).
+
+- `recover_configurations(bits, n_rows, n_qubits, occ, n_protons, n_neutrons, seed)` -- repairs each shot's proton and neutron halves to the target counts in place. Port of `qiskit_addon_sqd.configuration_recovery.recover_configurations`, with the same flip weights, drawn without replacement.
+- `recovery_loop(ms, occ_int, n_protons, n_neutrons, mj2_target, max_iterations, eigenvalues, dim, n_kept, status)` -- repair -> symmetry filter -> grow subspace -> diagonalize -> update occupancies from the ground state.
+
 ### `nuclear_gates.f90`
 Stable re-export facade for users writing custom ansatz circuits outside this application.
 Re-exports the four gate primitives from `nuclear_ansatz` under fixed public names so that
@@ -577,7 +613,7 @@ Subspace Hamiltonian construction, diagonalization, and operator pool management
 - `seed_double_angles` -- theta = 1/2*arctan(2*V_ms / Delta_EN), denominator = H_ref - H_exc including spectators and pair self-interaction.
 - `verify_angle_formulas` -- sanity-check: for each pair/quadruple builds explicit 2x2 Hamiltonian and verifies seeded angles match exact diagonalization to within tolerance.
 - `build_subspace_hamiltonian` -- builds H restricted to pooled QPU (quantum processing unit) bitstrings; OMP (OpenMP) COLLAPSE(2).
-- `diagonalize_exact_complex` -- LAPACK zheev (complex Hermitian eigensolver); returns lowest 1-4 eigenvalues.
+- `diagonalize_exact_complex` -- lowest min(4, dim) eigenpairs via LAPACK dsyevr on the real symmetric H (falls back to zheev, all pairs, if H has an imaginary part).
 
 ### `clebsch_gordan.f90`
 - `init_cg_tables(j_max_2)` / `cleanup_cg_tables()` -- allocate/free coefficient cache.

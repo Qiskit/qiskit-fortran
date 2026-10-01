@@ -23,6 +23,8 @@
 !> A single coarray image (cafrun -n 1, or compiled without a coarray
 !> runtime) gives the same result as:
 !>   nuclear_shell_driver --bitstrings-dir DIR --mode per-step
+!> and, with --recovery N, as the driver with the same flag: each step is
+!> repaired on its own with seeds that do not depend on the image.
 !>
 !> For the pooled strategy (all circuits merged into one subspace, giving a
 !> tighter variational bound), use nuclear_shell_driver directly without
@@ -46,6 +48,7 @@ program nuclear_shell_parallel
     use usdb_reader,      only: read_usdb_file, model_space_data
     use orbital_registry, only: init_registry_from_snt, reg_n_qubits
     use clebsch_gordan,   only: init_cg_tables, cleanup_cg_tables
+    use nuclear_recovery, only: recovery_loop
     implicit none
 
     ! Coarray scalars: each image's best energy and timing
@@ -56,6 +59,7 @@ program nuclear_shell_parallel
     integer :: n_steps        = 11
     integer :: n_protons_arg  = 2
     integer :: n_neutrons_arg = 2
+    integer :: n_recovery     = 0
     character(len=256) :: bits_dir   = ""
     character(len=64)  :: shell_arg  = "sd"
     character(len=64)  :: snt_file   = "USDB.snt"
@@ -124,6 +128,12 @@ program nuclear_shell_parallel
                 call get_command_argument(i_arg, arg)
                 read(arg, *) mj2_tgt
             end if
+        case ('--recovery')
+            i_arg = i_arg + 1
+            if (i_arg <= n_args) then
+                call get_command_argument(i_arg, arg)
+                read(arg, *) n_recovery
+            end if
         case ('--shell')
             i_arg = i_arg + 1
             if (i_arg <= n_args) then
@@ -148,8 +158,12 @@ program nuclear_shell_parallel
                 print *, "  --bitstrings-dir D  directory containing bitstrings_stepNN.txt"
                 print *, "  --mj-target N       2*Mj sector (default 0)"
                 print *, "  --shell NAME        shell model space: 'sd' (default) or 'pf' (untested)"
+                print *, "  --recovery N        configuration recovery rounds per step (default 0 = off)"
             end if
             stop 0
+        case default
+            if (me == 1) write(*,'("ERROR: unknown option: ",A)') trim(arg)
+            error stop "nuclear_shell_parallel: unknown option (see --help)"
         end select
         i_arg = i_arg + 1
     end do
@@ -195,6 +209,9 @@ program nuclear_shell_parallel
     ! automatically without manual edits to the source literal.
     jmax2_derived = int(maxval(ms%orbitals%j2), c_int)
     call init_cg_tables(jmax2_derived)
+    ! setup_single_particle_data re-inits the registry at (0,0); restore the HF
+    ! occupation that --recovery seeds from.
+    call init_registry_from_snt(ms, int(n_protons_arg, c_int), int(n_neutrons_arg, c_int))
 
     ! Each image processes its own partition of steps
     e_local_min   = huge(1.0d0)
@@ -264,10 +281,19 @@ program nuclear_shell_parallel
         call filter_bitstrings_int(occ_int, int(n_shots_file), int(n_qubits), int(n_qubits/2), &
                                    int(n_protons_arg, c_int), int(n_neutrons_arg, c_int), &
                                    mj2_tgt, 0_c_int, kept, n_kept_ci)
-        deallocate(occ_int)
         n_kept = int(n_kept_ci)
 
-        if (n_kept > 0) then
+        if (n_recovery > 0) then
+            ! Repair this step's shots instead of discarding them, then diagonalize
+            call recovery_loop(ms, occ_int, int(n_protons_arg, c_int), int(n_neutrons_arg, c_int), &
+                               mj2_tgt, n_recovery, eigenvalues, dim, n_kept, info)
+            if (info == 0) then
+                e_local_min = min(e_local_min, eigenvalues(1))
+                write(*,'("  Image ",I3,": step ",I2,"  kept=",I4,"  dim=",I4,"  E=",F18.9," MeV")') &
+                    me, step, n_kept, dim, eigenvalues(1)
+            end if
+            if (allocated(eigenvalues)) deallocate(eigenvalues)
+        else if (n_kept > 0) then
             allocate(kept_idx(n_kept))
             ik = 0
             do j = 1, int(n_shots_file)
@@ -297,7 +323,7 @@ program nuclear_shell_parallel
             if (allocated(basis_map))    deallocate(basis_map)
         end if
 
-        deallocate(bitstrings, kept)
+        deallocate(bitstrings, kept, occ_int)
     end do
 
     call system_clock(t1_wall)

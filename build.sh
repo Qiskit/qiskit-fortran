@@ -77,6 +77,23 @@ if [[ -z "$FC" ]]; then
 fi
 FC="$(command -v "$FC")" || die "compiler '$FC' not found"
 
+# Homebrew flang points each macOS version at that version's SDK; when the
+# Command Line Tools are older than macOS, that SDK is missing and every link
+# fails with "ld: library 'System' not found".  Only then, use the SDK installed.
+# (The real fix is Command Line Tools matching the running macOS.)
+sdk_flags=()
+if [[ "$(uname -s)" == Darwin ]]; then
+    probe="$(mktemp -d)"
+    printf 'end\n' > "$probe/p.f90"
+    if ! (cd "$probe" && "$FC" p.f90 -o p) >/dev/null 2>&1 &&
+       sdk="$(xcrun --show-sdk-path 2>/dev/null)" &&
+       (cd "$probe" && "$FC" -isysroot "$sdk" p.f90 -o p) >/dev/null 2>&1; then
+        say "$FC cannot find its built-in macOS SDK; using -isysroot $sdk"
+        sdk_flags=(-DCMAKE_Fortran_FLAGS="${FFLAGS:+$FFLAGS }-isysroot \"$sdk\"")
+    fi
+    rm -rf "$probe"
+fi
+
 say "compiler $FC, $JOBS jobs, $BUILD_TYPE"
 
 # --- Qiskit C extension, and the runtime client when requested -------------
@@ -190,7 +207,7 @@ if ((RUNTIME)); then rt_flags=(-DQISKIT_FORTRAN_RUNTIME=ON -DQISKIT_RUNTIME_ROOT
 
 run cmake -S "$REPO" -B "$FBUILD" -DCMAKE_BUILD_TYPE="$BUILD_TYPE" \
     -DCMAKE_Fortran_COMPILER="$FC" -DQISKIT_ROOT="$QISKIT_ROOT" \
-    -DUSE_SWIG_BINDINGS=ON ${rt_flags[@]+"${rt_flags[@]}"}
+    -DUSE_SWIG_BINDINGS=ON ${rt_flags[@]+"${rt_flags[@]}"} ${sdk_flags[@]+"${sdk_flags[@]}"}
 run cmake --build "$FBUILD" --parallel "$JOBS"
 
 if ((TESTS)) && [[ -x "$FBUILD/test_qiskit" ]]; then
@@ -206,7 +223,7 @@ if [[ -n "$RUNTIME_ROOT" ]]; then app_flags=(-DQISKIT_RUNTIME_ROOT="$RUNTIME_ROO
 
 run cmake -S "$REPO/applications" -B "$ABUILD" -DCMAKE_BUILD_TYPE="$BUILD_TYPE" \
     -DCMAKE_Fortran_COMPILER="$FC" -DQISKIT_FORTRAN_ROOT="$FBUILD" \
-    -DQISKIT_ROOT="$QISKIT_ROOT" ${app_flags[@]+"${app_flags[@]}"}
+    -DQISKIT_ROOT="$QISKIT_ROOT" ${app_flags[@]+"${app_flags[@]}"} ${sdk_flags[@]+"${sdk_flags[@]}"}
 run cmake --build "$ABUILD" --parallel "$JOBS"
 
 step "Done  -  USDB.snt is staged beside the binaries"
